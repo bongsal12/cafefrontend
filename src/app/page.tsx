@@ -497,7 +497,7 @@ export default function CustomerMenuPage() {
                 <div className="text-sm text-red-600">{payError}</div>
               ) : khqr?.qr_string ? (
                 <KhqrCard
-                  merchantName="Khmer cafe"
+                  merchantName="STARCAFE"
                   amountUsd={Number(createdOrder?.total ?? subtotal)}
                   qrString={khqr.qr_string}
                 />
