@@ -28,6 +28,17 @@ const sugarOptions = [
   { label: "More", value: "more" },
 ];
 
+export default function POSPage() {
+  return (
+    <div className="rounded-2xl border bg-background p-6">
+      <h1 className="text-xl font-semibold">POS</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        POS page is under construction.
+      </p>
+    </div>
+  );
+}
+
 // export default function POSPage() {
 //   const [toast, setToast] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
 

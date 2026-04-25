@@ -55,6 +55,8 @@ const sugarOptions = [
 export default function CustomerMenuPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number>(0); // 0 = All
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -100,14 +102,46 @@ export default function CustomerMenuPage() {
       }
     })();
   }, []);
+  const categoryOptions = useMemo(() => {
+    const map = new Map<number, string>();
+
+    // If API returns product.category (recommended)
+    for (const p of products) {
+      // @ts-ignore
+      if (p.category?.id) map.set(p.category.id, p.category.name);
+
+      // fallback: if only category_id exists, show "Category #id"
+      // @ts-ignore
+      else if (p.category_id) map.set(p.category_id, `Category #${p.category_id}`);
+    }
+
+    return [{ id: 0, name: "All" }, ...Array.from(map, ([id, name]) => ({ id, name }))];
+  }, [products]);
+
+  const categories = useMemo(() => {
+    const names = products
+      .map((p: any) => p.category?.name)
+      .filter(Boolean);
+
+    return ["All", ...Array.from(new Set(names))];
+  }, [products]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q)
-    );
-  }, [products, search]);
+
+    return products.filter((p: any) => {
+      const matchSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.slug.toLowerCase().includes(q);
+
+      const matchCategory =
+        selectedCategory === "All" ||
+        p.category?.name === selectedCategory;
+
+      return matchSearch && matchCategory;
+    });
+  }, [products, search, selectedCategory]);
 
   const subtotal = useMemo(() => cart.reduce((s, it) => s + it.price * it.qty, 0), [cart]);
 
@@ -510,10 +544,12 @@ export default function CustomerMenuPage() {
       ) : null}
 
       {/* Page */}
+      <img src="image/latte.webp" alt="logo" className="h-[230px] md:h-fit max-w-full mx-auto items-center rounded-bl-[80px] rounded-tr-[80px] md:rounded-none" />
       <div className="mx-auto max-w-6xl px-4 py-6">
         {/* Header */}
-        <div className="rounded-3xl bg-[#064e4d] p-6 shadow-sm border border-black/5">
-          <div className="grid gap-3 md:grid-cols-3">
+
+        <div className="rounded-3xl bg-[#064e4d] p-4 shadow-sm border border-black/5">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
             <label className="block">
               <div className="mb-1 text-sm font-medium text-white">Search</div>
               <input
@@ -525,7 +561,7 @@ export default function CustomerMenuPage() {
             </label>
 
             <label className="block">
-              <div className="mb-1 text-sm font-medium text-gray-900">Table No</div>
+              <div className="mb-1 text-sm font-medium text-white">Table No</div>
               <input
                 className="w-full rounded-xl border border-black/10 bg-gray-300 text-black px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#99613f]/30"
                 value={tableNo}
@@ -543,10 +579,46 @@ export default function CustomerMenuPage() {
         </div>
 
         {/* Menu */}
-        <div className="mt-6 rounded-3xl">
-          <div className="mb-3 flex items-center justify-between rounded-xl bg-[#042f2e] p-2 w-full">
-            <div className="font-bold text-white text-xl">Menu</div>
-            <div className="text-sm text-gray-300">{filtered.length} items</div>
+        <div className="mt-2 rounded-3xl">
+          <div className="mb-3 flex items-center justify-between rounded-xl  p-2 w-full">
+            <div className="mb-2">
+              <div className="text-xl font-bold text-[#042f2e] ">Menu</div>
+
+              <div className="flex items-center gap-3 overflow-x-auto  scrollbar-hide">
+                {categories.map((cat) => {
+                  const active = selectedCategory === cat;
+
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`shrink-0 rounded-[24px] px-8 py-2 text-sm font-semibold transition ${active
+                          ? "bg-[#0b4b46] text-white shadow-md"
+                          : "bg-[#f1f1f1] text-[#111827] hover:bg-[#e7e7e7]"
+                        }`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+                {/* Optional filter/settings icon button */}
+                <button
+                  className="shrink-0 rounded-[24px] bg-white border  border-gray-200 px-5 py-2 shadow-sm hover:bg-gray-50"
+                  type="button"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-7 w-7 text-gray-700"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M7 12h10M10 18h4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
 
           {loading ? (
@@ -556,7 +628,7 @@ export default function CustomerMenuPage() {
               No products found.
             </div>
           ) : (
-            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-2">
               {filtered.map((p) => (
                 <MenuCard key={p.id} product={p} onAdd={addToCart} />
               ))}
@@ -580,40 +652,40 @@ function QtyBtn({ children, onClick }: { children: string; onClick: () => void }
   );
 }
 
-function 
-MenuCard({
-  product,
-  onAdd,
-}: {
-  product: Product;
-  onAdd: (p: Product, size: string, sugar: string) => void;
-}) {
+function
+  MenuCard({
+    product,
+    onAdd,
+  }: {
+    product: Product;
+    onAdd: (p: Product, size: string, sugar: string) => void;
+  }) {
   const [size, setSize] = useState(product.variants?.[0]?.size || "regular");
   const [sugar, setSugar] = useState("normal");
 
   const price = product.variants.find((v) => v.size === size)?.price ?? 0;
 
   return (
-    <div className="rounded-3xl border border-black/5 bg-white p-4 shadow-sm">
-      <div className="flex gap-3">
-        <div className="h-24 w-24 overflow-hidden rounded-2xl bg-[#f3e7dd] border border-black/5">
+    <div className="rounded-3xl border border-black/5 bg-white p-2 shadow-sm ">
+      <div className="grid md:flex gap-1">
+        <div className="md:h-24 h-30 w-full md:w-24 overflow-hidden rounded-2xl bg-[#f3e7dd] border border-black/5">
           {product.image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={`${IMAGE_BASE}/${product.image}`} alt={product.name} className="h-full w-full object-cover" />
           ) : null}
         </div>
 
-        <div className="flex-1">
-          <div className="font-extrabold text-[#4f0610]">{product.name}</div>
+        <div className="flex md:flex-1 md:grid justify-between items-center">
+          <div className="font-extrabold text-sm text-[#4f0610]">{product.name}</div>
           <div className="mt-1 text-sm font-bold text-[#a71237]">${Number(price).toFixed(2)}</div>
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 md:grid-cols-2">
+      <div className="mt-1 grid gap-2 grid-cols-2 md:grid-cols-1">
         <label className="block">
           <div className="mb-1 text-sm font-medium text-gray-900">Size</div>
           <select
-            className="w-full rounded-xl border text-black border-black/10 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#99613f]/30"
+            className="w-full rounded-xl border text-black border-black/10 bg-white px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-[#99613f]/30"
             value={size}
             onChange={(e) => setSize(e.target.value)}
           >
@@ -628,7 +700,7 @@ MenuCard({
         <label className="block">
           <div className="mb-1 text-sm font-medium text-gray-900">Sugar</div>
           <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 text-black py-2 text-sm outline-none focus:ring-2 focus:ring-[#99613f]/30"
+            className="w-full rounded-xl border border-black/10 bg-white px-3 text-black py-2 text-[11px] outline-none focus:ring-2 focus:ring-[#99613f]/30"
             value={sugar}
             onChange={(e) => setSugar(e.target.value)}
           >
