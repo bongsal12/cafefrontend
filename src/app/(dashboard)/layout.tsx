@@ -7,7 +7,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="grid gap-6 md:grid-cols-[260px_1fr]">
           <aside className="rounded-3xl bg-white p-5 shadow-sm border border-black/5">
-            <div className="text-xl font-extrabold text-[#4f2206]">Bo Coffee POS</div>
+            <div className="text-xl font-extrabold text-[#4f2206]">STARCOFFEE POS</div>
             <div className="mt-1 text-xs text-gray-600">Menu • Orders • Reports</div>
 
             <nav className="mt-6 space-y-2">

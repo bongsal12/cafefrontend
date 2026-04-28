@@ -93,8 +93,10 @@ export default function CustomerMenuPage() {
     (async () => {
       setLoading(true);
       try {
-        const p = await apiGet<any>("/products");
-        setProducts(p.data ?? p);
+        const p = await apiGet<any>("/products?is_active=true");
+        const rows = (p.data ?? p) as Product[];
+        // Safety fallback in case API response still includes inactive rows.
+        setProducts(rows.filter((row: any) => row?.is_active !== false));
       } catch (e: any) {
         setToast(e?.message || "Failed to load products");
       } finally {

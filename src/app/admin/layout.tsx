@@ -3,7 +3,7 @@
 import type { ComponentType, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Coffee, LayoutDashboard, QrCode, Settings, ShoppingBag, Tag, Tags } from "lucide-react";
+import { BarChart3, Coffee, LayoutDashboard, QrCode, Settings, ShoppingBag, Tag, Tags, WalletCards } from "lucide-react";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -14,13 +14,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {/* Sidebar */}
         <aside className="hidden w-70 flex-col border-r border-emerald-900/20 bg-gradient-to-b from-[#083a2f] via-[#0b4b3a] to-[#0f5b46] text-[#eaf6f0] lg:flex">
           <div className="p-6">
-            <div className="text-xl font-semibold tracking-tight">BO Coffee</div>
+            <div className="text-xl font-semibold tracking-tight">STARCOFFEE</div>
             <div className="text-xs text-emerald-100/80">Cafe Admin</div>
           </div>
 
           <nav className="space-y-1 px-3 pb-6">
             <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} active={pathname === "/admin"} />
             <NavItem href="/admin/orders" label="Orders" icon={ShoppingBag} active={pathname.startsWith("/admin/orders")} />
+            <NavItem href="/admin/pos" label="POS" icon={WalletCards} active={pathname.startsWith("/admin/pos")} />
             <NavItem href="/admin/menu" label="Products" icon={Coffee} active={pathname.startsWith("/admin/menu")} />
             <NavItem href="/admin/menu" label="Categories" icon={Tag} active={false} />
             <NavItem href="/admin/menu" label="Product Types" icon={Tags} active={false} />

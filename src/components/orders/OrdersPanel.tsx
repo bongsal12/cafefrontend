@@ -127,16 +127,27 @@ export default function OrdersPanel() {
 
   const parsed = useMemo<UiOrder[]>(() => {
     return orders
+      .filter((o) => {
+        const pm = (o.payment_method || o.payment_provider || "").toLowerCase();
+        const ps = (o.payment_status || "").toLowerCase();
+
+        // POS requirement: do not show Bakong orders in admin orders list until they are paid.
+        if (pm.includes("bakong") || pm.includes("khqr")) {
+          return ps === "paid";
+        }
+
+        return true;
+      })
       .map((o) => {
         const ts = new Date(o.created_at).getTime();
-        const idNum = Number(o.id || 0);
-        const paymentMethod: "Bakong" | "Cash" = idNum % 2 === 0 ? "Bakong" : "Cash";
+        const pm = (o.payment_method || o.payment_provider || "").toLowerCase();
+        const paymentMethod: "Bakong" | "Cash" = pm.includes("bakong") || pm.includes("khqr") ? "Bakong" : "Cash";
         return {
           ...o,
           totalValue: Number(o.total || 0),
           ts,
           paymentMethod,
-          tableLabel: `Table ${String((idNum % 9) + 1).padStart(2, "0")}`,
+          tableLabel: "Walk-in",
         };
       })
       .filter((o) => Number.isFinite(o.ts));

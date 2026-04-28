@@ -18,7 +18,7 @@ export function Sidebar() {
   return (
     <aside className="w-70 border-r bg-background">
       <div className="p-5">
-        <div className="font-bold text-lg">Bo Coffee</div>
+        <div className="font-bold text-lg">STARCOFFEE</div>
         <div className="text-xs text-muted-foreground">Cafe Admin</div>
       </div>
 

@@ -1,4 +1,4 @@
-import { apiDel, apiGet, apiUpload } from "@/app/lib/api";
+import { apiDel, apiGet, apiPatch, apiUpload } from "@/app/lib/api";
 import type { Product } from "@/app/types/entities";
 
 export type ProductUpsert = {
@@ -43,4 +43,7 @@ export const ProductsApi = {
   },
 
   remove: (id: number) => apiDel<{ ok: boolean }>(`/products/${id}`),
+
+  setActive: (id: number, isActive: boolean) =>
+    apiPatch<Product>(`/products/${id}`, { is_active: isActive }),
 };

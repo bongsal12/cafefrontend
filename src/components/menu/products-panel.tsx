@@ -135,6 +135,12 @@ export function ProductsPanel({ reloadKey = 0 }: ProductsPanelProps) {
                       <div className="font-semibold">{p.name}</div>
                       <div className="text-xs text-muted-foreground">{p.slug}</div>
 
+                      <div className="mt-1">
+                        <Badge variant={p.is_active === false ? "destructive" : "secondary"}>
+                          {p.is_active === false ? "Inactive" : "Active"}
+                        </Badge>
+                      </div>
+
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge variant="secondary">
                           Category: {categories.find((c) => c.id === p.category_id)?.name ?? p.category_id}
@@ -156,6 +162,21 @@ export function ProductsPanel({ reloadKey = 0 }: ProductsPanelProps) {
                   </div>
 
                   <div className="mt-4 flex justify-end gap-2">
+                    <Button
+                      variant={p.is_active === false ? "default" : "outline"}
+                      onClick={async () => {
+                        try {
+                          await ProductsApi.setActive(p.id, p.is_active === false);
+                          toast.success(p.is_active === false ? "Product activated" : "Product deactivated");
+                          await loadAll();
+                        } catch (e: any) {
+                          toast.error(e.message || "Update active status failed");
+                        }
+                      }}
+                    >
+                      {p.is_active === false ? "Activate" : "Deactivate"}
+                    </Button>
+
                     <Button
                       variant="secondary"
                       onClick={() => {

@@ -7,6 +7,7 @@ export type Product = {
   name: string;
   slug: string;
   image?: string | null;
+  is_active?: boolean;
   variants: ProductVariant[];
     category?: Category | null;
   product_type?: ProductType | null;

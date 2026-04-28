@@ -12,16 +12,18 @@ declare global {
 export function makeEcho() {
   if (typeof window !== "undefined") window.Pusher = Pusher;
 
-  const key = process.env.NEXT_PUBLIC_REVERB_APP_KEY!;
-  const host = process.env.NEXT_PUBLIC_REVERB_HOST || "127.0.0.1";
-  const port = Number(process.env.NEXT_PUBLIC_REVERB_PORT || 8080);
-  const scheme = process.env.NEXT_PUBLIC_REVERB_SCHEME || "http";
-  const cluster = process.env.NEXT_PUBLIC_REVERB_CLUSTER || "mt1"; // ✅ required
+  const key = process.env.NEXT_PUBLIC_REVERB_APP_KEY;
+  if (!key) {
+    throw new Error("Missing NEXT_PUBLIC_REVERB_APP_KEY");
+  }
+
+  const host = process.env.NEXT_PUBLIC_REVERB_HOST || window.location.hostname || "127.0.0.1";
+  const scheme = process.env.NEXT_PUBLIC_REVERB_SCHEME || (window.location.protocol === "https:" ? "https" : "http");
+  const port = Number(process.env.NEXT_PUBLIC_REVERB_PORT || (scheme === "https" ? 443 : 80));
 
   return new Echo({
-    broadcaster: "pusher",
+    broadcaster: "reverb",
     key,
-    cluster,
     wsHost: host,
     wsPort: port,
     wssPort: port,
