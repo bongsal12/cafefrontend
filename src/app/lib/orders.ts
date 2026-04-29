@@ -1,6 +1,6 @@
 import { apiGet, apiPatch, apiPost } from "@/app/lib/api";
 
-export type OrderItem = { name: string; size: string; qty: number; price: number; sugar: string };
+export type OrderItem = { name: string; size: string; qty: number; price: number; sugar: string; image?: string | null };
 export type Order = {
   id: number;
   reference: string;
@@ -18,7 +18,7 @@ export type Order = {
 export const OrdersApi = {
   list: () => apiGet<Order[]>("/orders"),
   create: (payload: {
-    items: Array<{ product_id?: number; name: string; size: string; sugar: string; qty: number; price: number }>;
+    items: Array<{ product_id?: number; name: string; size: string; sugar: string; qty: number; price: number; image?: string | null }>;
     payment_method?: "cash" | "bakong";
     status?: string;
     currency?: string;

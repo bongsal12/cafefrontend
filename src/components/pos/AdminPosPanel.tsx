@@ -369,6 +369,7 @@ export default function AdminPosPanel() {
           sugar: line.sugar,
           qty: line.qty,
           price: line.price,
+          image: line.image,
         })),
         payment_method: paymentMethod,
         currency: "USD",

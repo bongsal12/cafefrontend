@@ -7,6 +7,20 @@ import { makeEcho } from "@/app/lib/echo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BadgeDollarSign, CalendarDays, ChartColumn, Search, ShoppingBag, Wallet } from "lucide-react";
 
+const IMAGE_BASE = process.env.NEXT_PUBLIC_IMAGEPATH ?? process.env.NEXT_PUBLIC_IMAGE_BASE_URL ?? "http://127.0.0.1:8000/storage";
+
+function imgUrl(image?: string | null) {
+  if (!image) return "";
+  if (image.startsWith("http://") || image.startsWith("https://")) return image;
+  const base = IMAGE_BASE.replace(/\/$/, "");
+  return `${base}/${image}`;
+}
+
+function getItemThumbnail(image?: string | null) {
+  const url = imgUrl(image);
+  return url || null;
+}
+
 export default function ReportsPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [live, setLive] = useState(false);
@@ -48,7 +62,7 @@ export default function ReportsPanel() {
 
     const pollId = window.setInterval(() => {
       loadOrders();
-    }, 15000);
+    }, 5000);
 
     let echo: any;
     let refreshTimer: number | undefined;
@@ -122,7 +136,8 @@ export default function ReportsPanel() {
     }));
 
     const totalOrders = normalized.length;
-    const completed = normalized.filter((o) => o.status === "completed").length;
+    const completed = normalized.filter((o) => ["completed", "paid"].includes(o.status.toLowerCase())).length;
+    const pending = normalized.filter((o) => ["pending", "new", "processing"].includes(o.status.toLowerCase())).length;
     const cancelled = normalized.filter((o) => o.status === "cancelled").length;
     const totalRevenue = filteredOrders
       .filter((o) => o.status !== "cancelled")
@@ -154,14 +169,15 @@ export default function ReportsPanel() {
       .slice(0, 5);
 
     const statusRows = [
-      { label: "Completed", count: completed },
+      { label: "Completed/Paid", count: completed },
+      { label: "Pending", count: pending },
       { label: "Cancelled", count: cancelled },
-      { label: "Other", count: Math.max(totalOrders - completed - cancelled, 0) },
     ];
 
     return {
       totalOrders,
       completed,
+      pending,
       cancelled,
       totalRevenue,
       avgOrder,
@@ -175,16 +191,23 @@ export default function ReportsPanel() {
   const donut = useMemo(() => {
     const total = Math.max(stats.totalOrders, 1);
     const completedPct = (stats.completed / total) * 100;
+    const pendingPct = (stats.pending / total) * 100;
     const cancelledPct = (stats.cancelled / total) * 100;
     return {
       style: {
-        background: `conic-gradient(#1e6b54 0 ${completedPct}%, #9bc9b6 ${completedPct}% ${completedPct + cancelledPct}%, #d8e8df ${completedPct + cancelledPct}% 100%)`,
+        background: `conic-gradient(#1e6b54 0 ${completedPct}%, #9bc9b6 ${completedPct}% ${completedPct + pendingPct}%, #d8e8df ${completedPct + pendingPct}% ${completedPct + pendingPct + cancelledPct}%, #f0f6f3 ${completedPct + pendingPct + cancelledPct}% 100%)`,
       } as CSSProperties,
       completedPct,
+      pendingPct,
       cancelledPct,
-      otherPct: Math.max(100 - completedPct - cancelledPct, 0),
     };
   }, [stats]);
+
+  const salesRows = useMemo(() => {
+    return filteredOrders
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [filteredOrders]);
 
   return (
     <div className="space-y-4">
@@ -193,18 +216,18 @@ export default function ReportsPanel() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle className="text-3xl font-bold text-[#1c3c33]">Reports</CardTitle>
-              <p className="mt-1 text-sm text-[#5b766d]">
+              {/* <p className="mt-1 text-sm text-[#5b766d]">
                 Analyze cafe performance with live updates and fast insights.
-              </p>
+              </p> */}
             </div>
 
-            <div className="flex w-full items-center gap-2 rounded-xl border border-[#d5e3dd] bg-[#f7fbf9] px-3 py-2 lg:w-80">
+            {/* <div className="flex w-full items-center gap-2 rounded-xl border border-[#d5e3dd] bg-[#f7fbf9] px-3 py-2 lg:w-80">
               <Search className="h-4 w-4 text-[#6d8a80]" />
               <input
                 className="w-full bg-transparent text-sm text-[#2a4a40] outline-none placeholder:text-[#8aa198]"
                 placeholder="Search anything..."
               />
-            </div>
+            </div> */}
           </div>
 
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -252,15 +275,7 @@ export default function ReportsPanel() {
                 setRange("custom");
                 setDateTo(v);
               }} />
-              <span
-                className={`rounded-full border px-2.5 py-1 text-xs ${
-                  live
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-amber-200 bg-amber-50 text-amber-700"
-                }`}
-              >
-                {live ? "Live connected" : "Polling 15s"}
-              </span>
+            
             </div>
           </div>
         </CardHeader>
@@ -270,21 +285,21 @@ export default function ReportsPanel() {
         <MetricCard
           label="Total Revenue"
           value={`$${stats.totalRevenue.toFixed(2)}`}
-          hint="vs previous period"
+          hint=""
           icon={<BadgeDollarSign className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1])}
         />
         <MetricCard
           label="Total Orders"
           value={String(stats.totalOrders)}
-          hint="all channels"
+          hint=""
           icon={<ShoppingBag className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1] * 0.8)}
         />
         <MetricCard
           label="Avg Order Value"
           value={`$${stats.avgOrder.toFixed(2)}`}
-          hint="per ticket"
+          hint=""
           icon={<Wallet className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1] * 0.45)}
         />
@@ -351,22 +366,22 @@ export default function ReportsPanel() {
             </div>
 
             <div className="mt-4 space-y-2 text-sm">
-              <LegendRow color="#1e6b54" label="Completed" value={`${donut.completedPct.toFixed(0)}%`} />
-              <LegendRow color="#9bc9b6" label="Cancelled" value={`${donut.cancelledPct.toFixed(0)}%`} />
-              <LegendRow color="#d8e8df" label="Other" value={`${donut.otherPct.toFixed(0)}%`} />
+              <LegendRow color="#1e6b54" label="Completed/Paid" value={`${donut.completedPct.toFixed(0)}%`} />
+              <LegendRow color="#9bc9b6" label="Pending" value={`${donut.pendingPct.toFixed(0)}%`} />
+              <LegendRow color="#d8e8df" label="Cancelled" value={`${donut.cancelledPct.toFixed(0)}%`} />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <Card className="border-[#d8e6df] bg-white">
+      <div className="grid gap-4 xl:grid-cols-[1.4fr]">
+        <Card id="order-status-breakdown" className="border-[#d8e6df] bg-white">
           <CardHeader>
             <CardTitle className="text-base text-[#1f3d34]">Order Status Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[460px] text-sm">
+              <table className="w-full min-w-115 text-sm">
                 <thead>
                   <tr className="border-b border-[#e5efea] text-left text-[#6f897f]">
                     <th className="py-2">Status</th>
@@ -393,25 +408,75 @@ export default function ReportsPanel() {
           </CardContent>
         </Card>
 
-        <Card className="border-[#d8e6df] bg-white">
-          <CardHeader>
-            <CardTitle className="text-base text-[#1f3d34]">Recent Insight</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-2xl border border-[#dbe9e2] bg-[#f7fbf9] p-4">
-              <p className="text-sm text-[#35584d]">
-                Revenue currently sits at <span className="font-semibold text-[#1f3d34]">${stats.totalRevenue.toFixed(2)}</span> with
-                <span className="font-semibold text-[#1f3d34]"> {stats.completed} completed orders</span>. Top performer is
-                <span className="font-semibold text-[#1f3d34]"> {stats.topItems[0]?.name ?? "N/A"}</span>.
-              </p>
-              <button className="mt-4 inline-flex items-center gap-2 rounded-lg border border-[#cde1d8] bg-white px-3 py-1.5 text-sm text-[#245145] hover:bg-[#f1f8f4]">
-                <CalendarDays className="h-4 w-4" />
-                View detailed report
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+     
       </div>
+
+      <Card className="border-[#d8e6df] bg-white">
+        <CardHeader>
+          <CardTitle className="text-base text-[#1f3d34]">Sales Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-115 text-sm">
+              <thead>
+                <tr className="border-b border-[#e5efea] text-left text-[#6f897f]">
+                  <th className="py-2">Order Ref</th>
+                  <th className="py-2">Table</th>
+                  <th className="py-2">Payment</th>
+                  <th className="py-2">Items</th>
+                  <th className="py-2">Total</th>
+                  <th className="py-2">Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {salesRows.map((o) => {
+                  const totalValue = Number(o.total || 0);
+                  const tableLabel = (o as any).tableLabel ?? (o as any).table_no ?? "-";
+                  const payment = o.payment_method ?? o.payment_provider ?? o.payment_status ?? "-";
+                  return (
+                    <tr key={o.id} className="border-b border-[#eef4f1] text-[#25443a] hover:bg-[#f7fbf9]">
+                      <td className="py-2 font-medium">{o.reference}</td>
+                      <td className="py-2">{tableLabel}</td>
+                      <td className="py-2 text-sm text-[#445e55]">{String(payment)}</td>
+                      <td className="py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex -space-x-2">
+                            {(o.items ?? []).slice(0, 3).map((it, i) => (
+                              <div
+                                key={`${it.name}-${i}`}
+                                className="grid h-8 w-8 place-items-center overflow-hidden rounded-md border border-[#e6f0ea] bg-[#f3f7f5] text-[10px] text-[#6f897f]"
+                                title={it.name}
+                              >
+                                {getItemThumbnail(it.image) ? (
+                                  <img
+                                    src={getItemThumbnail(it.image) ?? undefined}
+                                    alt={it.name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span>No img</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="truncate text-sm text-[#28473d]">
+                            {(o.items ?? []).map((it) => it.name).join(", ") || "-"}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2">${totalValue.toFixed(2)}</td>
+                      <td className="py-2 text-xs text-[#6f897f]">
+                        <div>{new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                        <div>{new Date(o.created_at).toLocaleDateString()}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

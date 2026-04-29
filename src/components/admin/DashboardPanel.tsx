@@ -46,7 +46,7 @@ export default function DashboardPanel() {
 
     const pollId = window.setInterval(() => {
       loadOrders();
-    }, 15000);
+    }, 5000);
 
     let echo: any;
     let refreshTimer: number | undefined;
@@ -198,7 +198,7 @@ export default function DashboardPanel() {
     const completedCount = filtered.filter((o) => o.status.toLowerCase() === "completed").length;
     const cancelledCount = filtered.filter((o) => o.status.toLowerCase() === "cancelled").length;
     const paidLikeCount = filtered.filter((o) => isPaidLike(o.status)).length;
-    const otherCount = Math.max(filtered.length - completedCount - cancelledCount, 0);
+    const pendingCount = filtered.filter((o) => isPendingLike(o.status)).length;
 
     return {
       totalRevenue,
@@ -216,7 +216,7 @@ export default function DashboardPanel() {
       completedCount,
       cancelledCount,
       paidLikeCount,
-      otherCount,
+      pendingCount,
     };
   }, [filtered]);
 
@@ -224,14 +224,16 @@ export default function DashboardPanel() {
     const total = Math.max(filtered.length, 1);
     const paidPct = (dashboard.paidLikeCount / total) * 100;
     const completedPct = (dashboard.completedCount / total) * 100;
+    const pendingPct = (dashboard.pendingCount / total) * 100;
     const cancelledPct = (dashboard.cancelledCount / total) * 100;
 
     return {
       style: {
-        background: `conic-gradient(#1d6a52 0 ${paidPct}%, #8ab9a5 ${paidPct}% ${paidPct + completedPct}%, #d2e6dc ${paidPct + completedPct}% ${paidPct + completedPct + cancelledPct}%, #f0f6f3 ${paidPct + completedPct + cancelledPct}% 100%)`,
+        background: `conic-gradient(#1d6a52 0 ${paidPct}%, #8ab9a5 ${paidPct}% ${paidPct + completedPct}%, #9bc9b6 ${paidPct + completedPct}% ${paidPct + completedPct + pendingPct}%, #d2e6dc ${paidPct + completedPct + pendingPct}% ${paidPct + completedPct + pendingPct + cancelledPct}%, #f0f6f3 ${paidPct + completedPct + pendingPct + cancelledPct}% 100%)`,
       } as CSSProperties,
       paidPct,
       completedPct,
+      pendingPct,
       cancelledPct,
     };
   }, [dashboard, filtered.length]);
@@ -365,7 +367,7 @@ export default function DashboardPanel() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="w-full min-w-130 text-sm">
                 <thead>
                   <tr className="border-b border-[#e5efea] text-left text-[#6f897f]">
                     <th className="py-2">Order Ref</th>
@@ -377,7 +379,9 @@ export default function DashboardPanel() {
                 <tbody>
                   {dashboard.recentOrders.map((o) => (
                     <tr key={o.id} className="border-b border-[#eef4f1] text-[#25443a]">
-                      <td className="py-2 font-medium">{o.reference}</td>
+                      <td className="py-2 font-medium">
+                        <span>{o.reference}</span>
+                      </td>
                       <td className="py-2">
                         <span className="rounded-full bg-[#eef6f2] px-2 py-0.5 text-xs capitalize text-[#2c6f56]">
                           {o.status}
@@ -412,8 +416,8 @@ export default function DashboardPanel() {
             <div className="mt-4 space-y-2 text-sm">
               <Legend color="#1d6a52" label="Paid/Completed" value={String(dashboard.paidLikeCount)} />
               <Legend color="#8ab9a5" label="Completed" value={String(dashboard.completedCount)} />
+              <Legend color="#9bc9b6" label="Pending" value={String(dashboard.pendingCount)} />
               <Legend color="#d2e6dc" label="Cancelled" value={String(dashboard.cancelledCount)} />
-              <Legend color="#f0f6f3" label="Other" value={String(dashboard.otherCount)} />
             </div>
           </CardContent>
         </Card>

@@ -3,8 +3,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/
 type ApiOptions = { headers?: Record<string, string>; signal?: AbortSignal };
 type UploadOptions = ApiOptions & { method?: "POST" | "PUT" | "PATCH" };
 
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("auth_token");
+}
+
 async function request<T>(method: string, path: string, body?: any, opts?: ApiOptions): Promise<T> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const token = getAuthToken();
 
   const res = await fetch(url, {
     method,
@@ -12,6 +18,7 @@ async function request<T>(method: string, path: string, body?: any, opts?: ApiOp
     headers: {
       Accept: "application/json",
       ...(body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(opts?.headers || {}),
     },
     body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,

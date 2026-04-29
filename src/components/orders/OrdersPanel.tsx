@@ -9,6 +9,15 @@ import { makeEcho } from "@/app/lib/echo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
+const IMAGE_BASE = process.env.NEXT_PUBLIC_IMAGEPATH ?? process.env.NEXT_PUBLIC_IMAGE_BASE_URL ?? "http://127.0.0.1:8000/storage";
+
+function imgUrl(image?: string | null) {
+  if (!image) return "";
+  if (image.startsWith("http://") || image.startsWith("https://")) return image;
+  const base = IMAGE_BASE.replace(/\/$/, "");
+  return `${base}/${image}`;
+}
+
 type UiOrder = Order & {
   totalValue: number;
   ts: number;
@@ -18,6 +27,11 @@ type UiOrder = Order & {
 
 function fmtMoney(v: number) {
   return `$${v.toFixed(2)}`;
+}
+
+function itemThumb(image?: string | null) {
+  const url = imgUrl(image);
+  return url || null;
 }
 
 function statusTone(status: string) {
@@ -74,7 +88,7 @@ export default function OrdersPanel() {
 
     const pollId = window.setInterval(() => {
       loadOrders({ silent: true });
-    }, 15000);
+    }, 5000);
 
     let echo: any;
     let refreshTimer: number | undefined;
@@ -256,28 +270,16 @@ export default function OrdersPanel() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#173b31]">Orders</h1>
-          <p className="mt-1 text-sm text-[#5f7a70]">Manage and process customer orders in real time.</p>
+         
         </div>
-        <div className="flex w-full items-center gap-2 rounded-xl border border-[#d7e5de] bg-white px-3 py-2 lg:w-78">
-          <Search className="h-4 w-4 text-[#6d8a80]" />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="w-full bg-transparent text-sm text-[#27483e] outline-none placeholder:text-[#8aa198]"
-            placeholder="Search anything..."
-          />
-        </div>
+       
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard title="Total Orders" value={String(stats.totalOrders)} delta={stats.totalDelta} icon={<ShoppingBag className="h-4 w-4" />} />
         <KpiCard title="Paid Orders" value={String(stats.paidOrders)} delta={stats.paidDelta} icon={<CheckCircle2 className="h-4 w-4" />} />
         <KpiCard title="Completed" value={String(stats.completed)} delta={stats.completedDelta} icon={<CheckCircle2 className="h-4 w-4" />} />
         <KpiCard title="Cancelled" value={String(stats.cancelled)} delta={stats.cancelledDelta} icon={<ShieldX className="h-4 w-4" />} />
-        <KpiCard title="Realtime" value={live ? "Live" : "Polling"} delta={0} icon={<Wifi className="h-4 w-4" />} neutral />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.65fr_0.9fr]">
@@ -356,7 +358,7 @@ export default function OrdersPanel() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] text-sm">
+                <table className="w-full min-w-215 text-sm">
                     <thead>
                       <tr className="border-b border-[#e5efea] text-left text-[#6f897f]">
                         <th className="py-2">Order Ref</th>
@@ -382,11 +384,33 @@ export default function OrdersPanel() {
                           <td className="py-2">{o.tableLabel}</td>
                           <td className="py-2">{o.paymentMethod}</td>
                           <td className="py-2">
-                            <div className="text-xs">
-                              {(o.items ?? []).length} item{(o.items ?? []).length > 1 ? "s" : ""}
-                            </div>
-                            <div className="max-w-[220px] truncate text-xs text-[#6f897f]">
-                              {(o.items ?? []).map((it) => it.name).join(", ") || "-"}
+                            <div className="flex items-center gap-2">
+                              <div className="flex -space-x-2">
+                                {(o.items ?? []).slice(0, 3).map((it, idx) => {
+                                  const thumb = itemThumb(it.image);
+                                  return (
+                                    <div
+                                      key={`${it.name}-${idx}`}
+                                      className="grid h-8 w-8 place-items-center overflow-hidden rounded-md border border-[#e6f0ea] bg-[#f3f7f5] text-[10px] text-[#6f897f]"
+                                      title={it.name}
+                                    >
+                                      {thumb ? (
+                                        <img src={thumb} alt={it.name} className="h-full w-full object-cover" />
+                                      ) : (
+                                        <span>No img</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div>
+                                <div className="max-w-55 truncate text-sm text-red-400">
+                                  {(o.items ?? []).map((it) => it.name).join(", ") || "-"}
+                                </div>
+                                <div className="text-xs">
+                                  {(o.items ?? []).length} item{(o.items ?? []).length > 1 ? "s" : ""}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="py-2">
@@ -492,13 +516,19 @@ export default function OrdersPanel() {
                   <div className="space-y-2">
                     {(selectedOrder.items ?? []).map((item, idx) => {
                       const amount = Number(item.price || 0) * Number(item.qty || 0);
+                      const thumb = itemThumb(item.image);
                       return (
                         <div key={`${item.name}-${idx}`} className="flex items-start justify-between border-b border-[#edf4f0] pb-2 text-sm">
-                          <div>
-                            <div className="font-medium text-[#2a493f]">
-                              {item.qty}x {item.name}
+                          <div className="flex items-start gap-3">
+                            <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-md border border-[#e6f0ea] bg-[#f3f7f5] text-[10px] text-[#6f897f]">
+                              {thumb ? <img src={thumb} alt={item.name} className="h-full w-full object-cover" /> : <span>No img</span>}
                             </div>
-                            <div className="text-xs text-[#6f897f]">{item.size} • {item.sugar}</div>
+                            <div>
+                              <div className="font-medium text-[#2a493f]">
+                                {item.qty}x {item.name}
+                              </div>
+                              <div className="text-xs text-[#6f897f]">{item.size} • {item.sugar}</div>
+                            </div>
                           </div>
                           <div className="font-medium text-[#1f3d34]">{fmtMoney(amount)}</div>
                         </div>
