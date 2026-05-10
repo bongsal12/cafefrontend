@@ -53,6 +53,7 @@ export function ProductDialog({
   const [slug, setSlug] = useState("");
   const [variants, setVariants] = useState<VariantRow[]>([{ size: "regular", price: 0 }]);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>("");
 
   const [saving, setSaving] = useState(false);
 
@@ -109,6 +110,13 @@ export function ProductDialog({
     if (new Set(sizes).size !== sizes.length) return toast.error("Variant sizes must be unique");
 
     setSaving(true);
+    // If user pasted an image URL but didn't click "Use URL", fetch it now
+    if (imageUrl && !imageFile) {
+      // attempt to fetch; ignore result (fetchImageFromUrl shows toast on failure)
+      // ensure we await so the file is set before sending
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      await fetchImageFromUrl();
+    }
     try {
       const payload = {
         category_id: Number(categoryId),
@@ -130,9 +138,38 @@ export function ProductDialog({
       onOpenChange(false);
       await onRefresh();
     } catch (e: any) {
-      toast.error(e.message || "Save failed");
+      const raw = String(e?.message ?? e ?? "");
+      if (raw.includes("<") || /login|unauthorized|401|Route \[login\]/i.test(raw)) {
+        toast.error("Save failed: Not authenticated or session expired. Please login.");
+      } else {
+        toast.error(raw || "Save failed");
+      }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function fetchImageFromUrl() {
+    if (!imageUrl) return false;
+    try {
+      toast(`Fetching image...`, { duration: 2000 });
+      const res = await fetch(imageUrl);
+      if (!res.ok) {
+        toast.error("Failed to download image");
+        return false;
+      }
+      const blob = await res.blob();
+      const contentType = blob.type || "image/jpeg";
+      // derive filename from URL
+      const urlParts = imageUrl.split("/");
+      const name = urlParts[urlParts.length - 1].split("?")[0] || `image.${contentType.split("/")[1] || "jpg"}`;
+      const file = new File([blob], name, { type: contentType });
+      setImageFile(file);
+      toast.success("Image attached");
+      return true;
+    } catch (err) {
+      toast.error("Unable to fetch image");
+      return false;
     }
   }
 
@@ -203,17 +240,34 @@ export function ProductDialog({
                 <Input className="rounded-2xl" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="iced-latte" />
                 <div className="text-xs text-muted-foreground">Final: {autoSlug}</div>
               </div>
+
+              {/* Inventory fields removed (rolled back) */}
             </div>
 
             {/* Image */}
             <div className="space-y-2">
               <Label>Image</Label>
-              <Input
-                className="rounded-2xl"
-                type="file"
-                accept="image/*"
-                onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-              />
+              <div className="grid gap-2 md:grid-cols-3">
+                <Input
+                  className="rounded-2xl md:col-span-2"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                />
+
+                <div className="space-y-2 md:col-span-1">
+                  <Input
+                    placeholder="Or paste image URL"
+                    className="rounded-2xl"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                  />
+                  <Button type="button" variant="secondary" size="sm" onClick={fetchImageFromUrl}>
+                    Use URL
+                  </Button>
+                </div>
+              </div>
+              {imageFile ? <div className="text-xs text-muted-foreground">Attached: {imageFile.name}</div> : null}
             </div>
 
             {/* Variants */}

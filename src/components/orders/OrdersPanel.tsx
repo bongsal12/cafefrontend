@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { CalendarDays, CheckCircle2, Search, ShieldX, ShoppingBag, Wifi } from "lucide-react";
 import { toast } from "sonner";
+import { apiGet } from "@/app/lib/api";
 import { OrdersApi, type Order } from "@/app/lib/orders";
 import { makeEcho } from "@/app/lib/echo";
+import type { Product } from "@/app/types/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -51,25 +53,106 @@ function percentChange(current: number, previous: number) {
 
 export default function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [live, setLive] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "completed" | "pending" | "cancelled">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "completed" | "cancelled">("all");
+  const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
+  function toDateInput(ts: number) {
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function setRangeDates(nextRange: "day" | "week" | "month" | "custom") {
+    if (nextRange === "custom") return;
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    if (nextRange === "day") {
+      // Today - no change needed
+    } else if (nextRange === "week") {
+      start.setDate(end.getDate() - 6);
+    } else if (nextRange === "month") {
+      start.setDate(1);
+    }
+
+    const fromStr = toDateInput(start.getTime());
+    const toStr = toDateInput(end.getTime());
+    
+    setDateFrom(fromStr);
+    setDateTo(toStr);
+  }
+
   async function loadOrders(opts?: { silent?: boolean }) {
     if (!opts?.silent) setLoading(true);
     try {
       const data = await OrdersApi.list();
-      setOrders(data ?? []);
+      const rows = data ?? [];
+      setOrders(rows);
+      // ensure we have product records for any product_ids referenced in orders
+      ensureProductsForOrders(rows);
     } catch (e: any) {
       toast.error(e.message || "Load orders failed");
     } finally {
       if (!opts?.silent) setLoading(false);
+    }
+  }
+
+  async function ensureProductsForOrders(orderRows: Order[]) {
+    try {
+      const needed = new Set<number>();
+      for (const o of orderRows) {
+        for (const it of o.items ?? []) {
+          if (it.product_id) needed.add(it.product_id);
+        }
+      }
+
+      const have = new Set<number>(products.map((p) => p.id));
+      const missing: number[] = [];
+      needed.forEach((id) => {
+        if (!have.has(id)) missing.push(id);
+      });
+
+      if (missing.length === 0) return;
+
+      // fetch missing products one-by-one (small number expected)
+      const fetched: Product[] = [];
+      await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const p = await apiGet<any>(`/products/${id}`);
+            // apiGet may return the product directly or under data
+            const prod = (p?.data ?? p) as Product;
+            if (prod?.id) fetched.push(prod);
+          } catch (err) {
+            // ignore individual fetch failures
+          }
+        })
+      );
+
+      if (fetched.length > 0) {
+        setProducts((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          for (const p of fetched) map.set(p.id, p);
+          return Array.from(map.values());
+        });
+      }
+    } catch (err) {
+      // ignore
     }
   }
 
@@ -84,7 +167,19 @@ export default function OrdersPanel() {
   }
 
   useEffect(() => {
+    setRangeDates("day");
+
     loadOrders();
+
+    (async () => {
+      try {
+        const data = await apiGet<any>("/products?is_active=true");
+        const rows = (data?.data ?? data) as Product[];
+        setProducts((rows ?? []).filter((row: any) => row?.is_active !== false));
+      } catch {
+        // Keep orders page working even if products lookup fails.
+      }
+    })();
 
     const pollId = window.setInterval(() => {
       loadOrders({ silent: true });
@@ -139,6 +234,12 @@ export default function OrdersPanel() {
     };
   }, []);
 
+  const productImageById = useMemo(() => {
+    const map = new Map<number, string | null | undefined>();
+    products.forEach((p) => map.set(p.id, p.image));
+    return map;
+  }, [products]);
+
   const parsed = useMemo<UiOrder[]>(() => {
     return orders
       .filter((o) => {
@@ -161,7 +262,7 @@ export default function OrdersPanel() {
           totalValue: Number(o.total || 0),
           ts,
           paymentMethod,
-          tableLabel: "Walk-in",
+          tableLabel: o.table_no || "Walk-in",
         };
       })
       .filter((o) => Number.isFinite(o.ts));
@@ -197,19 +298,76 @@ export default function OrdersPanel() {
     const completed = filtered.filter((o) => o.status.toLowerCase() === "completed").length;
     const cancelled = filtered.filter((o) => o.status.toLowerCase() === "cancelled").length;
 
-    const now = Date.now();
+    // Determine current and previous periods based on selected range
+    const now = new Date();
     const dayMs = 24 * 60 * 60 * 1000;
-    const currentStart = now - 7 * dayMs;
-    const prevStart = now - 14 * dayMs;
+    let currentStart: number, currentEnd: number, prevStart: number, prevEnd: number;
+    let deltaLabel = "vs previous period";
 
-    const current = filtered.filter((o) => o.ts >= currentStart);
-    const previous = filtered.filter((o) => o.ts >= prevStart && o.ts < currentStart);
+    if (range === "day") {
+      // Today vs yesterday
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      currentStart = today.getTime();
+      currentEnd = now.getTime();
+      prevStart = yesterday.getTime();
+      prevEnd = today.getTime();
+      deltaLabel = "vs yesterday";
+    } else if (range === "week") {
+      // This week vs last week
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - 6);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const prevWeekStart = new Date(weekStart);
+      prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+      
+      currentStart = weekStart.getTime();
+      currentEnd = now.getTime();
+      prevStart = prevWeekStart.getTime();
+      prevEnd = weekStart.getTime();
+      deltaLabel = "vs last week";
+    } else if (range === "month") {
+      // This month vs last month
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      
+      const prevMonthStart = new Date(monthStart);
+      prevMonthStart.setMonth(prevMonthStart.getMonth() - 1);
+      
+      const prevMonthEnd = monthStart;
+      
+      currentStart = monthStart.getTime();
+      currentEnd = now.getTime();
+      prevStart = prevMonthStart.getTime();
+      prevEnd = prevMonthEnd.getTime();
+      deltaLabel = "vs last month";
+    } else {
+      // Custom range
+      const customStart = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : parsed[0]?.ts ?? Date.now();
+      const customEnd = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : now.getTime();
+      const customDuration = customEnd - customStart;
+      
+      currentStart = customStart;
+      currentEnd = customEnd;
+      prevStart = customStart - customDuration;
+      prevEnd = customStart;
+      deltaLabel = "vs previous period";
+    }
+
+    const current = parsed.filter((o) => o.ts >= currentStart && o.ts <= currentEnd);
+    const previous = parsed.filter((o) => o.ts >= prevStart && o.ts < prevEnd);
 
     return {
       totalOrders,
       paidOrders,
       completed,
       cancelled,
+      deltaLabel,
       totalDelta: percentChange(current.length, previous.length),
       paidDelta: percentChange(
         current.filter((o) => ["paid", "completed"].includes(o.status.toLowerCase())).length,
@@ -224,7 +382,7 @@ export default function OrdersPanel() {
         previous.filter((o) => o.status.toLowerCase() === "cancelled").length
       ),
     };
-  }, [filtered]);
+  }, [filtered, range, dateFrom, dateTo, parsed]);
 
   const perPage = 8;
   const totalPages = Math.max(Math.ceil(filtered.length / perPage), 1);
@@ -276,25 +434,53 @@ export default function OrdersPanel() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard title="Total Orders" value={String(stats.totalOrders)} delta={stats.totalDelta} icon={<ShoppingBag className="h-4 w-4" />} />
-        <KpiCard title="Paid Orders" value={String(stats.paidOrders)} delta={stats.paidDelta} icon={<CheckCircle2 className="h-4 w-4" />} />
-        <KpiCard title="Completed" value={String(stats.completed)} delta={stats.completedDelta} icon={<CheckCircle2 className="h-4 w-4" />} />
-        <KpiCard title="Cancelled" value={String(stats.cancelled)} delta={stats.cancelledDelta} icon={<ShieldX className="h-4 w-4" />} />
+        <KpiCard title="Total Orders" value={String(stats.totalOrders)} delta={stats.totalDelta} deltaLabel={stats.deltaLabel} icon={<ShoppingBag className="h-4 w-4" />} />
+        <KpiCard title="Paid Orders" value={String(stats.paidOrders)} delta={stats.paidDelta} deltaLabel={stats.deltaLabel} icon={<CheckCircle2 className="h-4 w-4" />} />
+        <KpiCard title="Completed" value={String(stats.completed)} delta={stats.completedDelta} deltaLabel={stats.deltaLabel} icon={<CheckCircle2 className="h-4 w-4" />} />
+        <KpiCard title="Cancelled" value={String(stats.cancelled)} delta={stats.cancelledDelta} deltaLabel={stats.deltaLabel} icon={<ShieldX className="h-4 w-4" />} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.65fr_0.9fr]">
         <Card className="border-[#d8e6df] bg-white">
           <CardHeader className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
+              <RangeBtn
+                label="Day"
+                active={range === "day"}
+                onClick={() => {
+                  setRange("day");
+                  setRangeDates("day");
+                  setPage(1);
+                }}
+              />
+              <RangeBtn
+                label="Week"
+                active={range === "week"}
+                onClick={() => {
+                  setRange("week");
+                  setRangeDates("week");
+                  setPage(1);
+                }}
+              />
+              <RangeBtn
+                label="This Month"
+                active={range === "month"}
+                onClick={() => {
+                  setRange("month");
+                  setRangeDates("month");
+                  setPage(1);
+                }}
+              />
               <div className="inline-flex items-center gap-2 rounded-lg border border-[#d7e4de] bg-white px-2.5 py-1.5 text-xs text-[#5a756c]">
                 <CalendarDays className="h-4 w-4" />
-                Date range
+                Custom
               </div>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => {
                   setDateFrom(e.target.value);
+                  setRange("custom");
                   setPage(1);
                 }}
                 className="rounded-lg border border-[#d7e4de] bg-white px-3 py-1.5 text-sm text-[#2a4a40]"
@@ -304,6 +490,7 @@ export default function OrdersPanel() {
                 value={dateTo}
                 onChange={(e) => {
                   setDateTo(e.target.value);
+                  setRange("custom");
                   setPage(1);
                 }}
                 className="rounded-lg border border-[#d7e4de] bg-white px-3 py-1.5 text-sm text-[#2a4a40]"
@@ -313,6 +500,8 @@ export default function OrdersPanel() {
                   onClick={() => {
                     setDateFrom("");
                     setDateTo("");
+                    setRange("day");
+                    setRangeDates("day");
                     setPage(1);
                   }}
                   className="rounded-lg border border-[#d7e4de] px-3 py-1.5 text-sm text-[#5a756c]"
@@ -334,7 +523,7 @@ export default function OrdersPanel() {
               >
                 All Statuses
               </button>
-              {(["pending", "paid", "completed", "cancelled"] as const).map((s) => (
+              {(["paid", "completed", "cancelled"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => {
@@ -387,7 +576,7 @@ export default function OrdersPanel() {
                             <div className="flex items-center gap-2">
                               <div className="flex -space-x-2">
                                 {(o.items ?? []).slice(0, 3).map((it, idx) => {
-                                  const thumb = itemThumb(it.image);
+                                  const thumb = itemThumb(it.image || (it.product_id ? productImageById.get(it.product_id) : null));
                                   return (
                                     <div
                                       key={`${it.name}-${idx}`}
@@ -516,7 +705,7 @@ export default function OrdersPanel() {
                   <div className="space-y-2">
                     {(selectedOrder.items ?? []).map((item, idx) => {
                       const amount = Number(item.price || 0) * Number(item.qty || 0);
-                      const thumb = itemThumb(item.image);
+                      const thumb = itemThumb(item.image || (item.product_id ? productImageById.get(item.product_id) : null));
                       return (
                         <div key={`${item.name}-${idx}`} className="flex items-start justify-between border-b border-[#edf4f0] pb-2 text-sm">
                           <div className="flex items-start gap-3">
@@ -596,12 +785,14 @@ function KpiCard({
   title,
   value,
   delta,
+  deltaLabel,
   icon,
   neutral,
 }: {
   title: string;
   value: string;
   delta: number;
+  deltaLabel: string;
   icon: ReactNode;
   neutral?: boolean;
 }) {
@@ -617,7 +808,7 @@ function KpiCard({
               <div className="mt-1 text-xs text-[#6f897f]">orders updating...</div>
             ) : (
               <div className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}>
-                {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% vs last 7 days
+                {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% {deltaLabel}
               </div>
             )}
           </div>
@@ -625,5 +816,19 @@ function KpiCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+function RangeBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+        active
+          ? "border-[#2f7c5f] bg-[#eaf5f0] text-[#205644]"
+          : "border-[#d7e4de] bg-white text-[#56736a] hover:bg-[#f5faf7]"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { apiGet } from "@/app/lib/api";
 import { OrdersApi, type Order } from "@/app/lib/orders";
 import { makeEcho } from "@/app/lib/echo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,53 +23,192 @@ function getItemThumbnail(image?: string | null) {
 }
 
 export default function ReportsPanel() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [report, setReport] = useState<any>(null);
+  const [prevReport, setPrevReport] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
   const [live, setLive] = useState(false);
-  const [range, setRange] = useState<"day" | "week" | "month" | "30d" | "custom">("30d");
+  const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  // Use refs to keep polling with current filter values
+  const rangeRef = useRef(range);
+  const dateFromRef = useRef(dateFrom);
+  const dateToRef = useRef(dateTo);
+
+  useEffect(() => {
+    rangeRef.current = range;
+    dateFromRef.current = dateFrom;
+    dateToRef.current = dateTo;
+  }, [range, dateFrom, dateTo]);
+
   function toDateInput(ts: number) {
-    return new Date(ts).toISOString().slice(0, 10);
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
   }
 
-  function setRangeDates(nextRange: "day" | "week" | "month" | "30d" | "custom") {
+  function setRangeDates(nextRange: "day" | "week" | "month" | "custom") {
     if (nextRange === "custom") return;
 
-    const now = new Date();
-    const end = new Date(now);
-    const start = new Date(now);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
 
-    if (nextRange === "day") start.setDate(now.getDate());
-    if (nextRange === "week") start.setDate(now.getDate() - 6);
-    if (nextRange === "month") start.setDate(now.getDate() - 29);
-    if (nextRange === "30d") start.setDate(now.getDate() - 29);
+    if (nextRange === "day") {
+      // Today - no change needed
+    } else if (nextRange === "week") {
+      start.setDate(end.getDate() - 6);
+    } else if (nextRange === "month") {
+      start.setDate(1);
+    }
 
-    setDateFrom(toDateInput(start.getTime()));
-    setDateTo(toDateInput(end.getTime()));
+    const fromStr = toDateInput(start.getTime());
+    const toStr = toDateInput(end.getTime());
+    
+    setDateFrom(fromStr);
+    setDateTo(toStr);
   }
 
-  async function loadOrders() {
+  async function loadReport() {
     try {
-      const data = await OrdersApi.list();
-      setOrders(data ?? []);
+      const currentRange = rangeRef.current;
+      const currentDateFrom = dateFromRef.current;
+      const currentDateTo = dateToRef.current;
+
+      const allOrders = await OrdersApi.list();
+      const normalized = (allOrders ?? [])
+        .filter((o: Order) => {
+          const pm = (o.payment_method || o.payment_provider || "").toLowerCase();
+          const ps = (o.payment_status || "").toLowerCase();
+          if (pm.includes("bakong") || pm.includes("khqr")) return ps === "paid";
+          return true;
+        })
+        .map((o: Order) => ({
+          ...o,
+          totalValue: Number(o.total || 0),
+          ts: new Date(o.created_at).getTime(),
+        }))
+        .filter((o: any) => Number.isFinite(o.ts));
+
+      const now = new Date();
+      let currentStart: number;
+      let currentEnd: number;
+      let prevStart: number;
+      let prevEnd: number;
+
+      if (currentRange === "day") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        currentStart = today.getTime();
+        currentEnd = now.getTime();
+        prevStart = yesterday.getTime();
+        prevEnd = today.getTime();
+      } else if (currentRange === "week") {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - 6);
+        weekStart.setHours(0, 0, 0, 0);
+        const prevWeekStart = new Date(weekStart);
+        prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+        currentStart = weekStart.getTime();
+        currentEnd = now.getTime();
+        prevStart = prevWeekStart.getTime();
+        prevEnd = weekStart.getTime();
+      } else if (currentRange === "month") {
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+        const prevMonthStart = new Date(monthStart);
+        prevMonthStart.setMonth(prevMonthStart.getMonth() - 1);
+        currentStart = monthStart.getTime();
+        currentEnd = now.getTime();
+        prevStart = prevMonthStart.getTime();
+        prevEnd = monthStart.getTime();
+      } else if (currentDateFrom && currentDateTo) {
+        currentStart = new Date(`${currentDateFrom}T00:00:00`).getTime();
+        currentEnd = new Date(`${currentDateTo}T23:59:59.999`).getTime();
+        const customDuration = currentEnd - currentStart;
+        prevStart = currentStart - customDuration;
+        prevEnd = currentStart;
+      } else {
+        currentStart = 0;
+        currentEnd = now.getTime();
+        prevStart = 0;
+        prevEnd = now.getTime();
+      }
+
+      const currentOrders = normalized.filter((o: any) => o.ts >= currentStart && o.ts <= currentEnd);
+      const prevOrders = normalized.filter((o: any) => o.ts >= prevStart && o.ts < prevEnd);
+
+      const currentRevenue = currentOrders.reduce((sum: number, o: any) => sum + o.totalValue, 0);
+      const prevRevenue = prevOrders.reduce((sum: number, o: any) => sum + o.totalValue, 0);
+      const currentAvgOrder = currentOrders.length ? currentRevenue / currentOrders.length : 0;
+      const prevAvgOrder = prevOrders.length ? prevRevenue / prevOrders.length : 0;
+
+      const topItemMap = new Map<string, number>();
+      for (const o of currentOrders) {
+        for (const item of o.items ?? []) {
+          const amount = Number(item.price || 0) * Number(item.qty || 0);
+          topItemMap.set(item.name, (topItemMap.get(item.name) ?? 0) + amount);
+        }
+      }
+
+      const reportData = {
+        orders: currentOrders,
+        totals: {
+          revenue: currentRevenue,
+          avgOrder: currentAvgOrder,
+        },
+        topItems: Array.from(topItemMap.entries())
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount)
+          .slice(0, 5),
+      };
+
+      const prevReportData = {
+        orders: prevOrders,
+        totals: {
+          revenue: prevRevenue,
+          avgOrder: prevAvgOrder,
+        },
+        topItems: [],
+      };
+
+      setReport(reportData ?? null);
+      setPrevReport(prevReportData ?? null);
     } catch {
       // Keep reports visible with last known values if request fails.
     }
   }
 
   useEffect(() => {
-    loadOrders();
+    loadReport();
+
+    (async () => {
+      try {
+        const data = await apiGet<any>("/products?is_active=true");
+        const rows = (data?.data ?? data) as any[];
+        setProducts((rows ?? []).filter((row: any) => row?.is_active !== false));
+      } catch {
+        // ignore lookup errors; report can still render
+      }
+    })();
 
     const pollId = window.setInterval(() => {
-      loadOrders();
+      loadReport();
     }, 5000);
 
     let echo: any;
     let refreshTimer: number | undefined;
     const scheduleRefresh = () => {
       window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => loadOrders(), 350);
+      refreshTimer = window.setTimeout(() => loadReport(), 350);
     };
 
     try {
@@ -113,37 +253,67 @@ export default function ReportsPanel() {
   }, []);
 
   useEffect(() => {
-    setRangeDates("30d");
+    setRangeDates("day");
   }, []);
 
-  const filteredOrders = useMemo(() => {
-    const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
-    const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+  useEffect(() => {
+    // Clear old data immediately when range changes to prevent stale data display
+    setReport(null);
+    setPrevReport(null);
+    loadReport();
+  }, [range, dateFrom, dateTo]);
 
-    return orders.filter((o) => {
-      const ts = new Date(o.created_at).getTime();
-      const okFrom = fromTs === null || ts >= fromTs;
-      const okTo = toTs === null || ts <= toTs;
-      return okFrom && okTo;
-    });
-  }, [orders, dateFrom, dateTo]);
+  const productImageById = useMemo(() => {
+    const map = new Map<number, string | null | undefined>();
+    products.forEach((p: any) => map.set(p.id, p.image));
+    return map;
+  }, [products]);
 
   const stats = useMemo(() => {
-    const normalized = filteredOrders.map((o) => ({
+    const reportOrders = (report?.orders ?? []) as any[];
+    const prevReportOrders = (prevReport?.orders ?? []) as any[];
+
+    const normalized = reportOrders.map((o) => ({
+      ...o,
+      totalValue: Number(o.total || 0),
+      ts: new Date(o.created_at).getTime(),
+    }));
+
+    const prevNormalized = prevReportOrders.map((o) => ({
       ...o,
       totalValue: Number(o.total || 0),
       ts: new Date(o.created_at).getTime(),
     }));
 
     const totalOrders = normalized.length;
-    const completed = normalized.filter((o) => ["completed", "paid"].includes(o.status.toLowerCase())).length;
-    const pending = normalized.filter((o) => ["pending", "new", "processing"].includes(o.status.toLowerCase())).length;
-    const cancelled = normalized.filter((o) => o.status === "cancelled").length;
-    const totalRevenue = filteredOrders
-      .filter((o) => o.status !== "cancelled")
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const completed = totalOrders;
+    const pending = 0;
+    const cancelled = 0;
+    const totalRevenue = Number(report?.totals?.revenue ?? 0);
+    const avgOrder = Number(report?.totals?.avgOrder ?? (totalOrders ? totalRevenue / totalOrders : 0));
 
-    const avgOrder = totalOrders ? totalRevenue / totalOrders : 0;
+    const prevOrders = prevNormalized.length;
+    const prevRevenue = Number(prevReport?.totals?.revenue ?? 0);
+    const prevAvgOrder = Number(prevReport?.totals?.avgOrder ?? (prevOrders ? prevRevenue / prevOrders : 0));
+
+    function pctChange(current: number, prev: number) {
+      if (!prev && !current) return 0;
+      if (!prev) return 100;
+      return ((current - prev) / prev) * 100;
+    }
+
+    const revenueDelta = pctChange(totalRevenue, prevRevenue);
+    const ordersDelta = pctChange(totalOrders, prevOrders);
+    const avgDelta = pctChange(avgOrder, prevAvgOrder);
+
+    let deltaLabel = "vs previous period";
+    if (range === "day") {
+      deltaLabel = "vs yesterday";
+    } else if (range === "week") {
+      deltaLabel = "vs last week";
+    } else if (range === "month") {
+      deltaLabel = "vs last month";
+    }
 
     const sorted = [...normalized].sort((a, b) => b.ts - a.ts);
     const recent = sorted.slice(0, 80);
@@ -156,20 +326,13 @@ export default function ReportsPanel() {
     }
     const trendPoints = Array.from(dayMap.entries()).slice(-8);
 
-    const itemRevenueMap = new Map<string, number>();
-    for (const o of normalized) {
-      for (const item of o.items ?? []) {
-        const current = itemRevenueMap.get(item.name) ?? 0;
-        itemRevenueMap.set(item.name, current + Number(item.price || 0) * Number(item.qty || 0));
-      }
-    }
-    const topItems = Array.from(itemRevenueMap.entries())
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 5);
+    const topItems = (report?.topItems ?? []).map((item: { name: string; amount?: number; total?: number }) => ({
+      name: item.name,
+      amount: Number(item.total ?? item.amount ?? 0),
+    }));
 
     const statusRows = [
-      { label: "Completed/Paid", count: completed },
+      { label: "Paid", count: completed },
       { label: "Pending", count: pending },
       { label: "Cancelled", count: cancelled },
     ];
@@ -185,8 +348,12 @@ export default function ReportsPanel() {
       topItems,
       statusRows,
       recent,
+      deltaLabel,
+      revenueDelta,
+      ordersDelta,
+      avgDelta,
     };
-  }, [filteredOrders]);
+  }, [report, prevReport, range]);
 
   const donut = useMemo(() => {
     const total = Math.max(stats.totalOrders, 1);
@@ -204,10 +371,8 @@ export default function ReportsPanel() {
   }, [stats]);
 
   const salesRows = useMemo(() => {
-    return filteredOrders
-      .slice()
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [filteredOrders]);
+    return stats.recent;
+  }, [stats.recent]);
 
   return (
     <div className="space-y-4">
@@ -249,19 +414,11 @@ export default function ReportsPanel() {
                 }}
               />
               <RangeBtn
-                label="Month"
+                label="This Month"
                 active={range === "month"}
                 onClick={() => {
                   setRange("month");
                   setRangeDates("month");
-                }}
-              />
-              <RangeBtn
-                label="30 Days"
-                active={range === "30d"}
-                onClick={() => {
-                  setRange("30d");
-                  setRangeDates("30d");
                 }}
               />
             </div>
@@ -284,31 +441,40 @@ export default function ReportsPanel() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Total Revenue"
-          value={`$${stats.totalRevenue.toFixed(2)}`}
-          hint=""
+          value={report ? `$${stats.totalRevenue.toFixed(2)}` : "-"}
+          delta={stats.revenueDelta}
+          deltaLabel={stats.deltaLabel}
           icon={<BadgeDollarSign className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1])}
+          loading={!report}
         />
         <MetricCard
           label="Total Orders"
-          value={String(stats.totalOrders)}
-          hint=""
+          value={report ? String(stats.totalOrders) : "-"}
+          delta={stats.ordersDelta}
+          deltaLabel={stats.deltaLabel}
           icon={<ShoppingBag className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1] * 0.8)}
+          loading={!report}
         />
         <MetricCard
           label="Avg Order Value"
-          value={`$${stats.avgOrder.toFixed(2)}`}
-          hint=""
+          value={report ? `$${stats.avgOrder.toFixed(2)}` : "-"}
+          delta={stats.avgDelta}
+          deltaLabel={stats.deltaLabel}
           icon={<Wallet className="h-4 w-4" />}
           points={stats.trendPoints.map((x) => x[1] * 0.45)}
+          loading={!report}
         />
         <MetricCard
           label="Completed Orders"
-          value={String(stats.completed)}
-          hint={`${stats.cancelled} cancelled`}
+          value={report ? String(stats.completed) : "-"}
+          delta={0}
+          deltaLabel={stats.deltaLabel}
+          hint={report ? `${stats.cancelled} cancelled` : ""}
           icon={<ChartColumn className="h-4 w-4" />}
           points={stats.trendPoints.map((_, i) => i + 4)}
+          loading={!report}
         />
       </div>
 
@@ -330,7 +496,7 @@ export default function ReportsPanel() {
             {stats.topItems.length === 0 ? (
               <p className="text-sm text-[#6b857b]">No item data yet.</p>
             ) : (
-              stats.topItems.map((row, i) => {
+              (stats.topItems as Array<{ name: string; amount: number }>).map((row, i) => {
                 const peak = stats.topItems[0]?.amount || 1;
                 const pct = Math.max((row.amount / peak) * 100, 8);
                 return (
@@ -431,7 +597,7 @@ export default function ReportsPanel() {
               <tbody>
                 {salesRows.map((o) => {
                   const totalValue = Number(o.total || 0);
-                  const tableLabel = (o as any).tableLabel ?? (o as any).table_no ?? "-";
+                  const tableLabel = (o as any).tableLabel ?? (o as any).table_no ?? "Walk-in";
                   const payment = o.payment_method ?? o.payment_provider ?? o.payment_status ?? "-";
                   return (
                     <tr key={o.id} className="border-b border-[#eef4f1] text-[#25443a] hover:bg-[#f7fbf9]">
@@ -441,15 +607,15 @@ export default function ReportsPanel() {
                       <td className="py-2">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-2">
-                            {(o.items ?? []).slice(0, 3).map((it, i) => (
+                            {(o.items ?? []).slice(0, 3).map((it: any, i: number) => (
                               <div
                                 key={`${it.name}-${i}`}
                                 className="grid h-8 w-8 place-items-center overflow-hidden rounded-md border border-[#e6f0ea] bg-[#f3f7f5] text-[10px] text-[#6f897f]"
                                 title={it.name}
                               >
-                                {getItemThumbnail(it.image) ? (
+                                {getItemThumbnail(it.image || (it.product_id ? productImageById.get(it.product_id) : null)) ? (
                                   <img
-                                    src={getItemThumbnail(it.image) ?? undefined}
+                                    src={getItemThumbnail(it.image || (it.product_id ? productImageById.get(it.product_id) : null)) ?? undefined}
                                     alt={it.name}
                                     className="h-full w-full object-cover"
                                   />
@@ -460,7 +626,7 @@ export default function ReportsPanel() {
                             ))}
                           </div>
                           <div className="truncate text-sm text-[#28473d]">
-                            {(o.items ?? []).map((it) => it.name).join(", ") || "-"}
+                            {(o.items ?? []).map((it: any) => it.name).join(", ") || "-"}
                           </div>
                         </div>
                       </td>
@@ -514,15 +680,22 @@ function MetricCard({
   label,
   value,
   hint,
+  delta,
+  deltaLabel,
   icon,
   points,
+  loading = false,
 }: {
   label: string;
   value: string;
-  hint: string;
+  hint?: string;
+  delta: number;
+  deltaLabel: string;
   icon: ReactNode;
   points: number[];
+  loading?: boolean;
 }) {
+  const up = delta >= 0;
   return (
     <Card className="border-[#d8e6df] bg-white">
       <CardContent className="p-4">
@@ -530,7 +703,14 @@ function MetricCard({
           <div>
             <div className="text-xs text-[#6d877d]">{label}</div>
             <div className="mt-1 text-3xl font-semibold tracking-tight text-[#1f3d34]">{value}</div>
-            <div className="mt-1 text-xs text-[#6f897f]">{hint}</div>
+            {loading ? (
+              <div className="mt-1 text-xs text-[#8aa198]">loading...</div>
+            ) : (
+              <div className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}>
+                {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% {deltaLabel}
+              </div>
+            )}
+            {hint && <div className="mt-1 text-xs text-[#6f897f]">{hint}</div>}
           </div>
           <div className="rounded-xl border border-[#d7e5de] bg-[#f4faf7] p-2 text-[#2b6e56]">{icon}</div>
         </div>

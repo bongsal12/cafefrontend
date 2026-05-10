@@ -136,12 +136,31 @@ export default function DashboardPanel() {
     const current = filtered.filter((o) => o.ts >= currentStart);
     const previous = filtered.filter((o) => o.ts >= prevStart && o.ts < currentStart);
 
+    // today's and yesterday's ranges (local day)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayTs = startOfToday.getTime();
+    const startOfYesterdayTs = startOfTodayTs - dayMs;
+
+    const today = filtered.filter((o) => o.ts >= startOfTodayTs);
+    const yesterday = filtered.filter((o) => o.ts >= startOfYesterdayTs && o.ts < startOfTodayTs);
+
     const currentRevenue = current
       .filter((o) => o.status.toLowerCase() !== "cancelled")
       .reduce((sum, o) => sum + o.totalValue, 0);
     const previousRevenue = previous
       .filter((o) => o.status.toLowerCase() !== "cancelled")
       .reduce((sum, o) => sum + o.totalValue, 0);
+
+    // today's and yesterday's revenue / counts
+    const todayRevenue = today.filter((o) => o.status.toLowerCase() !== "cancelled").reduce((s, o) => s + o.totalValue, 0);
+    const yesterdayRevenue = yesterday.filter((o) => o.status.toLowerCase() !== "cancelled").reduce((s, o) => s + o.totalValue, 0);
+    const todayPaid = today.filter((o) => isPaidLike(o.status)).length;
+    const yesterdayPaid = yesterday.filter((o) => isPaidLike(o.status)).length;
+    const todayPending = today.filter((o) => isPendingLike(o.status)).length;
+    const yesterdayPending = yesterday.filter((o) => isPendingLike(o.status)).length;
+    const todayAvg = today.length ? today.filter((o) => o.status.toLowerCase() !== "cancelled").reduce((s, o) => s + o.totalValue, 0) / today.length : 0;
+    const yesterdayAvg = yesterday.length ? yesterday.filter((o) => o.status.toLowerCase() !== "cancelled").reduce((s, o) => s + o.totalValue, 0) / yesterday.length : 0;
 
     const revenueDelta = pctChange(currentRevenue, previousRevenue);
     const paidDelta = pctChange(
@@ -179,8 +198,11 @@ export default function DashboardPanel() {
     }
     const trend = Array.from(trendMap.entries()).map(([label, value]) => ({ label, value }));
 
+    // Top drinks and recent/live activity restricted to today per request
+    // Exclude pending-like orders from these displays per request
+    const todayNoPending = today.filter((o) => !isPendingLike(o.status));
     const drinkMap = new Map<string, number>();
-    for (const o of filtered) {
+    for (const o of todayNoPending) {
       for (const item of o.items ?? []) {
         const amount = Number(item.price || 0) * Number(item.qty || 0);
         drinkMap.set(item.name, (drinkMap.get(item.name) ?? 0) + amount);
@@ -191,19 +213,37 @@ export default function DashboardPanel() {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    const sorted = [...filtered].sort((a, b) => b.ts - a.ts);
+    const sorted = [...todayNoPending].sort((a, b) => b.ts - a.ts);
     const recentOrders = sorted.slice(0, 5);
     const liveActivity = sorted.slice(0, 5);
 
-    const completedCount = filtered.filter((o) => o.status.toLowerCase() === "completed").length;
-    const cancelledCount = filtered.filter((o) => o.status.toLowerCase() === "cancelled").length;
-    const paidLikeCount = filtered.filter((o) => isPaidLike(o.status)).length;
-    const pendingCount = filtered.filter((o) => isPendingLike(o.status)).length;
+    const completedCount = todayNoPending.filter((o) => o.status.toLowerCase() === "completed").length;
+    const cancelledCount = todayNoPending.filter((o) => o.status.toLowerCase() === "cancelled").length;
+    const paidLikeCount = todayNoPending.filter((o) => isPaidLike(o.status)).length;
+    const pendingCount = 0; // pending excluded from dashboard displays
+
+    const todayTotal = today.length;
+    const deltaLabel = "vs yesterday";
 
     return {
       totalRevenue,
+      currentRevenue,
+      previousRevenue,
+      todayRevenue,
+      yesterdayRevenue,
       paidOrders,
+      currentPaid: current.filter((o) => isPaidLike(o.status)).length,
+      previousPaid: previous.filter((o) => isPaidLike(o.status)).length,
       pendingOrders,
+      currentPending: current.filter((o) => isPendingLike(o.status)).length,
+      previousPending: previous.filter((o) => isPendingLike(o.status)).length,
+      todayPaid,
+      yesterdayPaid,
+      todayPending: 0,
+      yesterdayPending: 0,
+      todayAvg,
+      yesterdayAvg,
+      todayTotal,
       avgOrder,
       revenueDelta,
       paidDelta,
@@ -217,35 +257,35 @@ export default function DashboardPanel() {
       cancelledCount,
       paidLikeCount,
       pendingCount,
+      deltaLabel,
     };
-  }, [filtered]);
+  }, [parsed, search]);
 
   const donut = useMemo(() => {
-    const total = Math.max(filtered.length, 1);
-    const paidPct = (dashboard.paidLikeCount / total) * 100;
-    const completedPct = (dashboard.completedCount / total) * 100;
-    const pendingPct = (dashboard.pendingCount / total) * 100;
-    const cancelledPct = (dashboard.cancelledCount / total) * 100;
+    // Exclude pending from the donut chart per request and use today's totals
+    const totalExcludingPending = Math.max((dashboard.todayTotal ?? 0) - (dashboard.todayPending ?? 0), 1);
+    const paidPct = (dashboard.paidLikeCount / totalExcludingPending) * 100;
+    const completedPct = (dashboard.completedCount / totalExcludingPending) * 100;
+    const cancelledPct = (dashboard.cancelledCount / totalExcludingPending) * 100;
 
     return {
       style: {
-        background: `conic-gradient(#1d6a52 0 ${paidPct}%, #8ab9a5 ${paidPct}% ${paidPct + completedPct}%, #9bc9b6 ${paidPct + completedPct}% ${paidPct + completedPct + pendingPct}%, #d2e6dc ${paidPct + completedPct + pendingPct}% ${paidPct + completedPct + pendingPct + cancelledPct}%, #f0f6f3 ${paidPct + completedPct + pendingPct + cancelledPct}% 100%)`,
+        background: `conic-gradient(#1d6a52 0 ${paidPct}%, #8ab9a5 ${paidPct}% ${paidPct + completedPct}%, #d2e6dc ${paidPct + completedPct}% ${paidPct + completedPct + cancelledPct}%, #f0f6f3 ${paidPct + completedPct + cancelledPct}% 100%)`,
       } as CSSProperties,
       paidPct,
       completedPct,
-      pendingPct,
       cancelledPct,
     };
-  }, [dashboard, filtered.length]);
+  }, [dashboard]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#173b31]">Dashboard</h1>
-          <p className="mt-1 text-sm text-[#5f7a70]">Welcome back. Here is what is happening in your cafe.</p>
+          {/* <p className="mt-1 text-sm text-[#5f7a70]">Welcome back. Here is what is happening in your cafe.</p> */}
         </div>
-        <div className="flex w-full items-center gap-2 rounded-xl border border-[#d7e5de] bg-white px-3 py-2 lg:w-78">
+        {/* <div className="flex w-full items-center gap-2 rounded-xl border border-[#d7e5de] bg-white px-3 py-2 lg:w-78">
           <Search className="h-4 w-4 text-[#6d8a80]" />
           <input
             value={search}
@@ -253,37 +293,41 @@ export default function DashboardPanel() {
             className="w-full bg-transparent text-sm text-[#27483e] outline-none placeholder:text-[#8aa198]"
             placeholder="Search orders, status, item..."
           />
-        </div>
+        </div> */}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <StatCard
           title="Total Revenue"
-          value={fmtMoney(dashboard.totalRevenue)}
-          delta={dashboard.revenueDelta}
+          value={fmtMoney(dashboard.todayRevenue)}
+          delta={pctChange(dashboard.todayRevenue, dashboard.yesterdayRevenue)}
+          rawCurrent={dashboard.todayRevenue}
+          rawPrevious={dashboard.yesterdayRevenue}
+          deltaLabel={dashboard.deltaLabel}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
           title="Paid Orders"
-          value={String(dashboard.paidOrders)}
-          delta={dashboard.paidDelta}
+          value={String(dashboard.todayPaid)}
+          delta={pctChange(dashboard.todayPaid, dashboard.yesterdayPaid)}
+          rawCurrent={dashboard.todayPaid}
+          rawPrevious={dashboard.yesterdayPaid}
+          deltaLabel={dashboard.deltaLabel}
           icon={<ShoppingBag className="h-4 w-4" />}
         />
-        <StatCard
-          title="Pending Orders"
-          value={String(dashboard.pendingOrders)}
-          delta={dashboard.pendingDelta}
-          icon={<Clock3 className="h-4 w-4" />}
-        />
+        {/* Pending Orders removed per request */}
         <StatCard
           title="Avg Order Value"
-          value={fmtMoney(dashboard.avgOrder)}
-          delta={dashboard.avgDelta}
+          value={fmtMoney(dashboard.todayAvg)}
+          delta={pctChange(dashboard.todayAvg, dashboard.yesterdayAvg)}
+          rawCurrent={dashboard.todayAvg}
+          rawPrevious={dashboard.yesterdayAvg}
+          deltaLabel={dashboard.deltaLabel}
           icon={<Wallet className="h-4 w-4" />}
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1.2fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_1.2fr]">
         <Card className="border-[#d8e6df] bg-white xl:col-span-1">
           <CardHeader>
             <CardTitle className="text-base text-[#1f3d34]">Revenue Trend (7 days)</CardTitle>
@@ -322,7 +366,7 @@ export default function DashboardPanel() {
             )}
           </CardContent>
         </Card>
-
+{/* 
         <Card className="border-[#d8e6df] bg-white">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base text-[#1f3d34]">Live Activity</CardTitle>
@@ -356,7 +400,7 @@ export default function DashboardPanel() {
               ))
             )}
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -406,7 +450,7 @@ export default function DashboardPanel() {
               <div className="relative h-40 w-40 rounded-full" style={donut.style}>
                 <div className="absolute inset-5 grid place-items-center rounded-full bg-white text-center">
                   <div>
-                    <div className="text-xl font-semibold text-[#1d3b32]">{filtered.length}</div>
+                    <div className="text-xl font-semibold text-[#1d3b32]">{dashboard.todayTotal}</div>
                     <div className="text-xs text-[#6f897f]">Orders</div>
                   </div>
                 </div>
@@ -416,7 +460,6 @@ export default function DashboardPanel() {
             <div className="mt-4 space-y-2 text-sm">
               <Legend color="#1d6a52" label="Paid/Completed" value={String(dashboard.paidLikeCount)} />
               <Legend color="#8ab9a5" label="Completed" value={String(dashboard.completedCount)} />
-              <Legend color="#9bc9b6" label="Pending" value={String(dashboard.pendingCount)} />
               <Legend color="#d2e6dc" label="Cancelled" value={String(dashboard.cancelledCount)} />
             </div>
           </CardContent>
@@ -431,13 +474,39 @@ function StatCard({
   value,
   delta,
   icon,
+  rawCurrent,
+  rawPrevious,
+  deltaLabel,
 }: {
   title: string;
   value: string;
   delta: number;
   icon: ReactNode;
+  rawCurrent?: number;
+  rawPrevious?: number;
+  deltaLabel?: string;
 }) {
+  const deltaLabelText = deltaLabel || "vs previous 7 days";
   const up = delta >= 0;
+
+  // Tooltip text showing raw numbers when available
+  const tooltip = rawCurrent !== undefined && rawPrevious !== undefined
+    ? `This period: ${fmtMoney(rawCurrent)} • Previous: ${fmtMoney(rawPrevious)}`
+    : undefined;
+
+  // Handle previous==0 case: show "New" when previous is zero and current > 0
+  const specialNew = rawPrevious === 0 && (rawCurrent ?? 0) > 0;
+  const isCurrency = String(value).trim().startsWith("$");
+  const absDelta = rawCurrent !== undefined && rawPrevious !== undefined ? rawCurrent - rawPrevious : undefined;
+  const absLabel =
+    absDelta === undefined
+      ? undefined
+      : isCurrency
+      ? `${absDelta >= 0 ? "+" : "-"}${fmtMoney(Math.abs(absDelta))}`
+      : `${absDelta >= 0 ? "+" : "-"}${Math.abs(Math.round(absDelta))}`;
+  // compute percent when previous > 0
+  const percentForDisplay = rawPrevious && rawPrevious > 0 && rawCurrent !== undefined ? pctChange(rawCurrent, rawPrevious) : undefined;
+
   return (
     <Card className="border-[#d8e6df] bg-white">
       <CardContent className="p-4">
@@ -445,8 +514,21 @@ function StatCard({
           <div>
             <div className="text-xs text-[#6d877d]">{title}</div>
             <div className="mt-1 text-3xl font-semibold tracking-tight text-[#1f3d34]">{value}</div>
-            <div className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}>
-              {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% vs last 7 days
+            <div
+              className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}
+              title={tooltip}
+            >
+              {specialNew && absLabel ? (
+                <span>
+                  {absLabel} {deltaLabelText}
+                </span>
+              ) : specialNew ? (
+                <span>New</span>
+              ) : (
+                <span>
+                  {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% {deltaLabelText}
+                </span>
+              )}
             </div>
           </div>
           <div className="rounded-xl border border-[#d7e5de] bg-[#f4faf7] p-2 text-[#2b6e56]">{icon}</div>
@@ -479,6 +561,13 @@ function LineChart({ labels, points }: { labels: string[]; points: number[] }) {
         <line x1="24" y1={height - 28} x2={width - 24} y2={height - 28} stroke="#dce9e3" />
         <line x1="24" y1="16" x2="24" y2={height - 28} stroke="#dce9e3" />
         <polyline fill="none" stroke="#2d775c" strokeWidth="3" points={line} />
+        {/* highlight last point */}
+        {points.length > 0 && (() => {
+          const i = points.length - 1;
+          const lx = 24 + (i / Math.max(points.length - 1, 1)) * (width - 48);
+          const ly = height - 28 - ((points[i] - min) / range) * (height - 56);
+          return <circle cx={lx} cy={ly} r={4} fill="#2d775c" stroke="#fff" strokeWidth={1.5} />;
+        })()}
       </svg>
       <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-[#789287] md:grid-cols-7">
         {labels.map((l) => (

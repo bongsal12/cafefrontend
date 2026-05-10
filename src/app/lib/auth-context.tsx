@@ -13,7 +13,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (loginInput: string, password: string) => Promise<void>;
+  login: (loginInput: string, password: string) => Promise<User | void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -73,6 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(data.user);
       setToken(data.token);
       localStorage.setItem("auth_token", data.token);
+
+      return data.user;
     } finally {
       setIsLoading(false);
     }

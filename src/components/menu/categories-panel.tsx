@@ -74,11 +74,11 @@ export function CategoriesPanel({ reloadKey, onNeedReload }: { reloadKey: number
       <div className="flex flex-col gap-3 rounded-2xl border bg-background p-5 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-lg font-bold">Categories</div>
-          <div className="text-sm text-muted-foreground">Create and manage categories used on the menu.</div>
+          
         </div>
 
         <div className="flex gap-2">
-          <Input className="w-65" placeholder="Search..." value={q} onChange={(e) => setQ(e.target.value)} />
+         
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>+ Add Category</Button>

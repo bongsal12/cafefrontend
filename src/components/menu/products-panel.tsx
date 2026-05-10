@@ -78,13 +78,14 @@ export function ProductsPanel({ reloadKey = 0 }: ProductsPanelProps) {
     return products.filter((p) => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q));
   }, [products, search]);
 
+  
+
   return (
     <div className="space-y-4">
       <Card className="rounded-3xl">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle>Products</CardTitle>
-            <CardDescription>Create / edit products with variants.</CardDescription>
           </div>
 
           <div className="flex w-full gap-2 md:w-auto">
@@ -148,9 +149,12 @@ export function ProductsPanel({ reloadKey = 0 }: ProductsPanelProps) {
                         <Badge variant="outline">
                           Type: {types.find((t) => t.id === p.product_type_id)?.name ?? p.product_type_id}
                         </Badge>
+                        
                       </div>
                     </div>
                   </div>
+
+                  
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     {(p.variants ?? []).map((v, idx) => (
@@ -161,7 +165,8 @@ export function ProductsPanel({ reloadKey = 0 }: ProductsPanelProps) {
                     ))}
                   </div>
 
-                  <div className="mt-4 flex justify-end gap-2">
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    
                     <Button
                       variant={p.is_active === false ? "default" : "outline"}
                       onClick={async () => {

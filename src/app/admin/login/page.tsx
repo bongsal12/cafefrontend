@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function LoginPage() {
-  const { login, isLoading, isAuthenticated } = useAuth();
+  const { login, isLoading, isAuthenticated, user } = useAuth();
   const router = useRouter();
   const [loginInput, setLoginInput] = useState("admin");
   const [password, setPassword] = useState("12345678");
@@ -14,17 +14,26 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.push("/admin");
+      if (user?.role === "staff") {
+        router.push("/admin/pos");
+      } else {
+        router.push("/admin");
+      }
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, user]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      await login(loginInput, password);
-      router.push("/admin");
+      const u = await login(loginInput, password);
+      const role = u?.role || user?.role;
+      if (role === "staff") {
+        router.push("/admin/pos");
+      } else {
+        router.push("/admin");
+      }
     } catch (err: any) {
       setError(err.message || "Login failed");
     } finally {

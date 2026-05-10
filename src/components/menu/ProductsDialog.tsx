@@ -116,7 +116,12 @@ export function ProductDialog({
       onOpenChange(false);
       await onSaved();
     } catch (e: any) {
-      toast.error(e.message || "Save failed");
+      const raw = String(e?.message ?? e ?? "");
+      if (raw.includes("<") || /login|unauthorized|401|Route \[login\]/i.test(raw)) {
+        toast.error("Save failed: Not authenticated or session expired. Please login.");
+      } else {
+        toast.error(raw || "Save failed");
+      }
     } finally {
       setSaving(false);
     }
@@ -169,6 +174,8 @@ export function ProductDialog({
             <Label>Slug (optional)</Label>
             <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="iced-latte" />
           </div>
+
+          {/* Inventory fields removed (rolled back) */}
 
           <div className="md:col-span-2 space-y-2">
             <Label>Image</Label>
