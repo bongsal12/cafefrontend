@@ -97,13 +97,13 @@ export default function CustomerMenuPage() {
   const [khqr, setKhqr] = useState<KhqrResp | null>(null);
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
 
-  // timers
+ 
   const pollRef = useRef<number | null>(null);
   const expireRef = useRef<number | null>(null);
   const tickerRef = useRef<number | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
 
-  // Auto-hide toast (so "payment success" doesn't stick forever)
+ 
   useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(() => setToast(null), 2000);
@@ -116,7 +116,6 @@ export default function CustomerMenuPage() {
       try {
         const p = await apiGet<any>("/products?is_active=true");
         const rows = (p.data ?? p) as Product[];
-        // Safety fallback in case API response still includes inactive rows.
         setProducts(rows.filter((row: any) => row?.is_active !== false));
       } catch (e: any) {
         setToast(e?.message || "Failed to load products");
@@ -134,14 +133,8 @@ export default function CustomerMenuPage() {
   }, [searchParams]);
   const categoryOptions = useMemo(() => {
     const map = new Map<number, string>();
-
-    // If API returns product.category (recommended)
     for (const p of products) {
-      // @ts-ignore
       if (p.category?.id) map.set(p.category.id, p.category.name);
-
-      // fallback: if only category_id exists, show "Category #id"
-      // @ts-ignore
       else if (p.category_id) map.set(p.category_id, `Category #${p.category_id}`);
     }
 
@@ -194,7 +187,7 @@ export default function CustomerMenuPage() {
           size,
           sugar,
           qty: 1,
-          price: Number(v.price),
+          price: Number(v.discounted_price ?? v.price),
           image: p.image ?? null,
         },
       ];
@@ -217,7 +210,6 @@ export default function CustomerMenuPage() {
     setCart((prev) => prev.filter((x) => x.key !== key));
   }
 
-  // ---- timers ----
   function stopPolling() {
     if (pollRef.current) {
       window.clearInterval(pollRef.current);
@@ -339,7 +331,6 @@ export default function CustomerMenuPage() {
     setPayError(null);
 
     try {
-      // 1) Create order with payment method
       const payload = {
         table_no: tableNo,
         note,
@@ -366,7 +357,6 @@ export default function CustomerMenuPage() {
         return;
       }
 
-      // 2) Generate KHQR for bakong
       setPayLoading(true);
 
       const khqrResp = await apiPost<KhqrResp>(`/orders/${created.id}/bakong/khqr`, {
@@ -377,12 +367,9 @@ export default function CustomerMenuPage() {
 
       setKhqr(khqrResp);
       setPayLoading(false);
-
-      // timers
       startExpireTimer(khqrResp.expires_at);
       startTicker();
 
-      // check immediately then poll
       await checkPaymentOnce(created.id);
       await startPolling(created.id);
     } catch (e: any) {
@@ -398,14 +385,11 @@ export default function CustomerMenuPage() {
 
   return (
     <div className="min-h-screen bg-[#059669]">
-      {/* Toast */}
       {toast ? (
         <div className="fixed top-4 right-4 z-50 max-w-sm rounded-xl bg-[#4f2206] px-4 py-3 text-sm text-white shadow-lg">
           {toast}
         </div>
       ) : null}
-
-      {/* Floating Cart Button + badge */}
       <button
         type="button"
         onClick={() => setCartOpen(true)}
@@ -473,7 +457,6 @@ export default function CustomerMenuPage() {
                       <div className="flex gap-3">
                         <div className="h-14 w-14 overflow-hidden rounded-xl bg-white border border-black/5">
                           {it.image ? (
-                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={imageUrl(it.image)}
                               alt={it.name}
@@ -735,7 +718,10 @@ function
   const [size, setSize] = useState(product.variants?.[0]?.size || "regular");
   const [sugar, setSugar] = useState("normal");
 
-  const price = product.variants.find((v) => v.size === size)?.price ?? 0;
+  const selectedVariant = product.variants.find((v) => v.size === size);
+  const originalPrice = Number(selectedVariant?.original_price ?? selectedVariant?.price ?? 0);
+  const discountedPrice = Number(selectedVariant?.discounted_price ?? selectedVariant?.price ?? 0);
+  const hasDiscount = discountedPrice < originalPrice;
 
   return (
     <div className="rounded-3xl border border-black/5 bg-white p-2 shadow-sm ">
@@ -749,7 +735,16 @@ function
 
         <div className="flex md:flex-1 md:grid justify-between items-center">
           <div className="font-extrabold text-sm text-[#4f0610]">{product.name}</div>
-          <div className="mt-1 text-sm font-bold text-[#a71237]">${Number(price).toFixed(2)}</div>
+          <div className="mt-1 text-right">
+            {hasDiscount ? (
+              <>
+                <div className="text-xs text-gray-500 line-through">${originalPrice.toFixed(2)}</div>
+                <div className="text-sm font-bold text-[#a71237]">${discountedPrice.toFixed(2)}</div>
+              </>
+            ) : (
+              <div className="text-sm font-bold text-[#a71237]">${discountedPrice.toFixed(2)}</div>
+            )}
+          </div>
         </div>
       </div>
 

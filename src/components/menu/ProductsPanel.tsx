@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 import type { Category, Product, ProductType, ProductVariant } from "@/app/types/entities";
 import { apiDel, apiGet } from "@/app/lib/api";
 
@@ -163,6 +164,12 @@ export function ProductsPanel({
                 </div>
 
                 <div className="mt-4 flex justify-end gap-2">
+                  <Link
+                    href={`/admin/discount?product_id=${p.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+                  >
+                    Discount
+                  </Link>
                   <Button variant="secondary" onClick={() => openEdit(p)}>
                     Edit
                   </Button>

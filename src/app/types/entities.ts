@@ -1,4 +1,11 @@
-export type ProductVariant = { id?: number; size: string; price: number };
+export type ProductVariant = {
+  id?: number;
+  size: string;
+  price: number;
+  original_price?: number;
+  discounted_price?: number;
+  has_discount?: boolean;
+};
 
 export type Product = {
   id: number;
@@ -12,6 +19,15 @@ export type Product = {
   unit?: string;
   low_stock_alert?: number;
   is_low_stock?: boolean;
+  has_discount?: boolean;
+  active_promotion?: {
+    id: number;
+    name: string;
+    scope_type: "product" | "category";
+    percent: number;
+    start_at?: string | null;
+    end_at?: string | null;
+  } | null;
   variants: ProductVariant[];
     category?: Category | null;
   product_type?: ProductType | null;

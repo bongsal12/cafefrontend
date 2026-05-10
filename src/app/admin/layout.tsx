@@ -3,7 +3,7 @@
 import type { ComponentType, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Coffee, LayoutDashboard, Package, QrCode, Settings, ShoppingBag, User, WalletCards, LogOut } from "lucide-react";
+import { BarChart3, Coffee, LayoutDashboard, Package, QrCode, Settings, ShoppingBag, User, WalletCards, LogOut, Percent } from "lucide-react";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { useAuth } from "@/app/lib/auth-context";
 import { useRouter } from "next/navigation";
@@ -47,6 +47,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               {user?.role === "admin" && (
                 <>
                   <NavItem href="/admin/inventory" label="Inventory" icon={Package} active={pathname.startsWith("/admin/inventory")} />
+                  <NavItem href="/admin/discount" label="Discounts" icon={Percent} active={pathname.startsWith("/admin/discount")} />
                   <NavItem href="/admin/reports" label="Reports" icon={BarChart3} active={pathname.startsWith("/admin/reports")} />
                   <NavItem href="/admin/tables" label="QR Tables" icon={QrCode} active={pathname.startsWith("/admin/tables")} />
                   <NavItem href="/admin/reports" label="Settings" icon={Settings} active={false} />

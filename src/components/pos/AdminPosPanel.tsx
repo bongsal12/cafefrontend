@@ -410,7 +410,6 @@ export default function AdminPosPanel() {
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-[#173b31]">POS</h1>
-        <p className="mt-1 text-sm text-[#5f7a70]">Create admin walk-in orders with cash or Bakong and print receipts.</p>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
@@ -440,7 +439,7 @@ export default function AdminPosPanel() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredProducts.map((product) => (
                   <div key={product.id} className="rounded-2xl border border-[#e5efea] p-3">
-                    <div className="mb-2 h-28 overflow-hidden rounded-xl bg-[#f5f8f6]">
+                    <div className="mb-2 h-42 overflow-hidden rounded-xl bg-[#f5f8f6]">
                       {product.image ? (
                         <img
                           src={imageUrl(product.image)}
@@ -460,17 +459,32 @@ export default function AdminPosPanel() {
                       {product.category?.name || "Category"} • {product.product_type?.name || "Type"}
                     </div>
 
-                    <div className="mt-3 space-y-2">
-                      {(product.variants ?? []).map((variant, idx) => (
-                        <button
-                          key={`${product.id}-${variant.size}-${idx}`}
-                          onClick={() => addLine(product, variant.size, Number(variant.price || 0))}
-                          className="flex w-full items-center justify-between rounded-lg border border-[#d7e5de] px-3 py-2 text-sm text-[#24443a] hover:bg-[#f4faf7]"
-                        >
-                          <span>{variant.size}</span>
-                          <span className="font-semibold">{fmtMoney(Number(variant.price || 0))}</span>
-                        </button>
-                      ))}
+                    <div className="mt-3 space-y-2 ">
+                      {(product.variants ?? []).map((variant, idx) => {
+                        const original = Number(variant.original_price ?? variant.price ?? 0);
+                        const discounted = Number(variant.discounted_price ?? variant.price ?? 0);
+                        const hasDiscount = discounted < original;
+
+                        return (
+                          <button
+                            key={`${product.id}-${variant.size}-${idx}`}
+                            onClick={() => addLine(product, variant.size, discounted)}
+                            className="flex w-full items-center justify-between rounded-lg border border-[#d7e5de] px-3 py-2 text-sm text-[#24443a] hover:bg-[#f4faf7]"
+                          >
+                            <span>{variant.size}</span>
+                            <span className="text-right">
+                              {hasDiscount ? (
+                                <>
+                                  <span className="block text-[12px] text-gray-400 line-through">{fmtMoney(original)}</span>
+                                  <span className="block font-semibold text-[#a71237]">{fmtMoney(discounted)}</span>
+                                </>
+                              ) : (
+                                <span className="font-semibold text-[#a71237]">{fmtMoney(discounted)}</span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -513,7 +527,7 @@ export default function AdminPosPanel() {
                               <div className="text-xs text-[#6f897f]">{line.size}</div>
                             </div>
                           </div>
-                          <div className="text-sm font-semibold text-[#1f3d34]">{fmtMoney(line.qty * line.price)}</div>
+                          <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(line.qty * line.price)}</div>
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                           <button
@@ -534,9 +548,9 @@ export default function AdminPosPanel() {
                     ))}
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-[#e5efea] pt-2 text-sm font-semibold text-[#1f3d34]">
+                  <div className="flex items-center justify-between  border-t border-[#e5efea] pt-2 text-sm font-semibold text-[#1f3d34]">
                     <span>Total</span>
-                    <span>{fmtMoney(subtotal)}</span>
+                    <span className="text-[#a71237]">{fmtMoney(subtotal)}</span>
                   </div>
                 </>
               )}
@@ -552,7 +566,7 @@ export default function AdminPosPanel() {
                         : "border-[#d7e5de] text-[#4f6d63]"
                     }`}
                   >
-                    <span className="inline-flex items-center gap-1"><Wallet className="h-4 w-4" /> Cash</span>
+                    <span className="inline-flex items-center gap-1"><Wallet className="h-4 w-4" />Cash</span>
                   </button>
                   <button
                     onClick={() => setPaymentMethod("bakong")}
