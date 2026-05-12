@@ -10,6 +10,7 @@ import type { Product } from "@/app/types/entities";
 import { KhqrCard } from "@/components/KhqrCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 type PaymentMethod = "cash" | "bakong";
@@ -22,6 +23,8 @@ type CartLine = {
   sugar: string;
   qty: number;
   price: number;
+  original_price?: number;
+  discounted_price?: number;
   image?: string | null;
 };
 
@@ -62,6 +65,13 @@ type ReceiptData = {
   bakongTrxId?: string;
 };
 
+const SUGAR_OPTIONS = [
+  { label: "No sweet", value: "No sweet" },
+  { label: "Less", value: "Less" },
+  { label: "Normal", value: "Normal" },
+  { label: "More", value: "More" },
+];
+
 const IMAGE_BASE =
   process.env.NEXT_PUBLIC_IMAGE_BASE_URL ??
   process.env.NEXT_PUBLIC_IMAGEPATH ??
@@ -99,8 +109,19 @@ function printReceipt(receipt: ReceiptData) {
   const rows = receipt.items
     .map((item) => {
       const lineTotal = item.qty * item.price;
+      const original = (item as any).original_price ?? item.price;
+      const discounted = (item as any).discounted_price ?? item.price;
+      const hasDiscount = discounted < original;
+
+      const priceHtml = hasDiscount
+        ? `<div style="font-size:12px;color:#6b7280;"><span style="text-decoration:line-through;margin-right:6px;">${original.toFixed(2)}</span><span style="font-weight:700;color:#a71237;">${discounted.toFixed(2)}</span></div>`
+        : `<div style="font-size:12px;font-weight:700;">${discounted.toFixed(2)}</div>`;
+
       return `<tr>
-<td>${esc(item.name)} (${esc(item.size)}) x${item.qty}</td>
+    <td>
+    <div>${esc(item.name)} (${esc(item.size)} • ${esc(item.sugar)}) x${item.qty}</div>
+${priceHtml}
+</td>
 <td style="text-align:right;">${lineTotal.toFixed(2)}</td>
 </tr>`;
     })
@@ -142,8 +163,8 @@ function printReceipt(receipt: ReceiptData) {
   <div class="ticket">
     <div class="head">
       <div class="store">STARCOFFEE</div>
-      <div class="sub">POS Receipt</div>
-      <div class="sub">${esc(receipt.reference)} | #${receipt.orderId}</div>
+      <div class="sub"> Receipt</div>
+      <div class="sub">Invoice:${esc(receipt.reference)} | #${receipt.orderId}</div>
       <div class="sub">${paidAt.toLocaleString()}</div>
     </div>
 
@@ -182,6 +203,120 @@ function printReceipt(receipt: ReceiptData) {
     popup.focus();
     popup.print();
   };
+}
+
+function PosProductCard({
+  product,
+  onAdd,
+}: {
+  product: Product;
+  onAdd: (product: Product, size: string, sugar: string, original: number, discounted: number) => void;
+}) {
+  const [size, setSize] = useState(product.variants?.[0]?.size || "regular");
+  const [sugar, setSugar] = useState(SUGAR_OPTIONS[2]?.value ?? "Normal");
+
+  const selectedVariant = product.variants.find((v) => v.size === size) ?? product.variants[0];
+  const original = Number(selectedVariant?.original_price ?? selectedVariant?.price ?? 0);
+  const discounted = Number(selectedVariant?.discounted_price ?? selectedVariant?.price ?? 0);
+  const hasDiscount = discounted < original;
+
+  // Check availability
+  const unavailable = Number(product.inventory_availability?.available ?? 0) <= 0 || product.is_sold_out;
+  let buttonText = "+ Add";
+  let statusMessage = "";
+
+  if (unavailable) {
+    buttonText = "Not Available";
+    statusMessage = "Temporarily unavailable";
+    if (product.inventory_availability?.reasons?.length) {
+      const reason = product.inventory_availability.reasons[0];
+      const match = reason.match(/Not enough (\w+)/);
+      if (match) {
+        buttonText = "Sold Out";
+        statusMessage = `Not enough ${match[1]}`;
+      }
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#e5efea] p-3">
+      <div className="mb-2 h-42 overflow-hidden rounded-xl bg-[#f5f8f6]">
+        {product.image ? (
+          <img
+            src={imageUrl(product.image)}
+            alt={product.name}
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-xs text-[#7b938a]">No image</div>
+        )}
+      </div>
+
+      <div className="font-semibold text-[#1f3d34]">{product.name}</div>
+      <div className="text-xs text-[#6e877e]">
+        {product.category?.name || "Category"} • {product.product_type?.name || "Type"}
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        <div className="grid gap-1">
+          <div className="text-xs font-medium text-[#35584d]">Size</div>
+          <select
+            className="rounded-lg border border-[#d7e5de] bg-white px-3 py-2 text-sm text-[#24443a]"
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            disabled={unavailable}
+          >
+            {(product.variants ?? []).map((variant) => (
+              <option key={variant.id ?? variant.size} value={variant.size}>
+                {variant.size}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-1">
+          <div className="text-xs font-medium text-[#35584d]">Sugar</div>
+          <select
+            className="rounded-lg border border-[#d7e5de] bg-white px-3 py-2 text-sm text-[#24443a]"
+            value={sugar}
+            onChange={(e) => setSugar(e.target.value)}
+            disabled={unavailable}
+          >
+            {SUGAR_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="text-right">
+          {hasDiscount ? (
+            <>
+              <div className="flex gap-1"><div className="text-xs text-gray-400 line-through">{fmtMoney(original)}</div>
+                <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(discounted)}</div></div>
+            </>
+          ) : (
+            <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(discounted)}</div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onAdd(product, size, sugar, original, discounted)}
+          className={`rounded-xl px-4 py-3 text-sm font-semibold text-white hover:opacity-95 disabled:cursor-not-allowed ${unavailable ? "bg-gray-400" : "bg-[#0b4b46]"
+            }`}
+          disabled={unavailable}
+        >
+          {buttonText}
+        </button>
+        {statusMessage && <div className="mt-2 text-xs text-red-600">{statusMessage}</div>}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminPosPanel() {
@@ -252,8 +387,8 @@ export default function AdminPosPanel() {
   const cashReceivedNum = Number(cashReceived || 0);
   const cashChange = Math.max(cashReceivedNum - subtotal, 0);
 
-  function addLine(product: Product, size: string, price: number) {
-    const key = `${product.id}:${size}`;
+  function addLine(product: Product, size: string, sugar: string, original: number, discounted: number) {
+    const key = `${product.id}:${size}:${sugar}`;
 
     setCart((prev) => {
       const existing = prev.find((line) => line.key === key);
@@ -268,9 +403,11 @@ export default function AdminPosPanel() {
           product_id: product.id,
           name: product.name,
           size,
-          sugar: "Normal",
+          sugar,
           qty: 1,
-          price,
+          price: discounted,
+          original_price: original,
+          discounted_price: discounted,
           image: product.image ?? null,
         },
       ];
@@ -369,6 +506,8 @@ export default function AdminPosPanel() {
           sugar: line.sugar,
           qty: line.qty,
           price: line.price,
+          original_price: line.original_price,
+          discounted_price: line.discounted_price,
           image: line.image,
         })),
         payment_method: paymentMethod,
@@ -438,55 +577,7 @@ export default function AdminPosPanel() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredProducts.map((product) => (
-                  <div key={product.id} className="rounded-2xl border border-[#e5efea] p-3">
-                    <div className="mb-2 h-42 overflow-hidden rounded-xl bg-[#f5f8f6]">
-                      {product.image ? (
-                        <img
-                          src={imageUrl(product.image)}
-                          alt={product.name}
-                          className="h-full w-full object-cover"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-[#7b938a]">No image</div>
-                      )}
-                    </div>
-
-                    <div className="font-semibold text-[#1f3d34]">{product.name}</div>
-                    <div className="text-xs text-[#6e877e]">
-                      {product.category?.name || "Category"} • {product.product_type?.name || "Type"}
-                    </div>
-
-                    <div className="mt-3 space-y-2 ">
-                      {(product.variants ?? []).map((variant, idx) => {
-                        const original = Number(variant.original_price ?? variant.price ?? 0);
-                        const discounted = Number(variant.discounted_price ?? variant.price ?? 0);
-                        const hasDiscount = discounted < original;
-
-                        return (
-                          <button
-                            key={`${product.id}-${variant.size}-${idx}`}
-                            onClick={() => addLine(product, variant.size, discounted)}
-                            className="flex w-full items-center justify-between rounded-lg border border-[#d7e5de] px-3 py-2 text-sm text-[#24443a] hover:bg-[#f4faf7]"
-                          >
-                            <span>{variant.size}</span>
-                            <span className="text-right">
-                              {hasDiscount ? (
-                                <>
-                                  <span className="block text-[12px] text-gray-400 line-through">{fmtMoney(original)}</span>
-                                  <span className="block font-semibold text-[#a71237]">{fmtMoney(discounted)}</span>
-                                </>
-                              ) : (
-                                <span className="font-semibold text-[#a71237]">{fmtMoney(discounted)}</span>
-                              )}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <PosProductCard key={product.id} product={product} onAdd={addLine} />
                 ))}
               </div>
             )}
@@ -524,10 +615,20 @@ export default function AdminPosPanel() {
                             </div>
                             <div>
                               <div className="text-sm font-medium text-[#1f3d34]">{line.name}</div>
-                              <div className="text-xs text-[#6f897f]">{line.size}</div>
+                              <div className="text-xs text-[#6f897f]">{line.size} • {line.sugar}</div>
                             </div>
                           </div>
-                          <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(line.qty * line.price)}</div>
+                          <div className="text-right">
+                            {line.original_price && line.discounted_price && line.discounted_price < line.original_price ? (
+                              <div>
+                                <div className="text-xs text-gray-400 line-through">{fmtMoney(line.original_price)}</div>
+                                <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(line.discounted_price)}</div>
+                                <div className="text-xs text-[#6b7280]">{fmtMoney(line.qty * (line.discounted_price ?? line.price))}</div>
+                              </div>
+                            ) : (
+                              <div className="text-sm font-semibold text-[#a71237]">{fmtMoney(line.qty * line.price)}</div>
+                            )}
+                          </div>
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                           <button
@@ -560,21 +661,19 @@ export default function AdminPosPanel() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => setPaymentMethod("cash")}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      paymentMethod === "cash"
+                    className={`rounded-lg border px-3 py-2 text-sm ${paymentMethod === "cash"
                         ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                         : "border-[#d7e5de] text-[#4f6d63]"
-                    }`}
+                      }`}
                   >
                     <span className="inline-flex items-center gap-1"><Wallet className="h-4 w-4" />Cash</span>
                   </button>
                   <button
                     onClick={() => setPaymentMethod("bakong")}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      paymentMethod === "bakong"
+                    className={`rounded-lg border px-3 py-2 text-sm ${paymentMethod === "bakong"
                         ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                         : "border-[#d7e5de] text-[#4f6d63]"
-                    }`}
+                      }`}
                   >
                     <span className="inline-flex items-center gap-1"><CreditCard className="h-4 w-4" /> Bakong</span>
                   </button>
@@ -603,34 +702,43 @@ export default function AdminPosPanel() {
             </CardContent>
           </Card>
 
-          {khqr && createdOrderId ? (
-            <Card className="border-[#d8e6df] bg-white">
-              <CardHeader>
-                <CardTitle className="text-[#1f3d34]">Bakong Payment</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-xs text-[#6f897f]">Order {createdReference} • #{createdOrderId}</div>
-                {khqr.qr_string ? (
+          <Dialog
+            open={Boolean(khqr && createdOrderId)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setKhqr(null);
+                setCreatedOrderId(null);
+                setCreatedReference("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-sm rounded-2xl">
+              <DialogHeader>
+                <DialogTitle>Bakong Payment</DialogTitle>
+              </DialogHeader>
+
+              {khqr?.qr_string ? (
+                <div className="flex justify-center">
                   <KhqrCard merchantName="STARCOFFEE" amountUsd={Number(khqr.amount || subtotal)} qrString={khqr.qr_string} />
-                ) : null}
-                <div className="flex gap-2">
-                  <Button onClick={() => checkBakongPayment(createdOrderId)} disabled={checkingPay}>
-                    {checkingPay ? "Checking..." : "Check Payment"}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setKhqr(null);
-                      setCreatedOrderId(null);
-                      setCreatedReference("");
-                    }}
-                  >
-                    Close QR
-                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          ) : null}
+              ) : null}
+              <div className="flex gap-2 mt-4">
+                <Button onClick={() => createdOrderId && checkBakongPayment(createdOrderId)} disabled={checkingPay}>
+                  {checkingPay ? "Checking..." : "Check Payment"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setKhqr(null);
+                    setCreatedOrderId(null);
+                    setCreatedReference("");
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {receipt ? (
             <Card className="border-[#d8e6df] bg-white">

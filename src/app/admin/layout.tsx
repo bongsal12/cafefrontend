@@ -73,13 +73,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <header className="sticky top-0 z-10 border-b border-emerald-900/10 bg-white/90 backdrop-blur">
               <div className="flex items-center justify-between px-4 py-4 md:px-6">
                 <div>
-                  <div className="font-semibold text-[#18352d]">Cafe Admin</div>
-                  <div className="text-xs text-[#5a746c]">User: {user?.name} ({user?.role})</div>
+                  <div className="font-semibold text-[#18352d] text-2xl">Cafe Admin</div>
+                  {/* <div className="text-xs text-[#5a746c]">User: {user?.name} ({user?.role})</div> */}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">Live</span>
-                  <span className="rounded-full border border-emerald-200 bg-white px-2 py-1 text-xs text-[#3f5f55]">USD</span>
-                </div>
+                
               </div>
             </header>
 

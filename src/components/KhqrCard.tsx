@@ -33,7 +33,7 @@ export function KhqrCard({
 
       {/* QR */}
       <div className="px-5 pb-6">
-        <div className="relative mx-auto w-[260px] rounded-2xl bg-white p-3">
+        <div className="relative mx-auto w-[260px] rounded-2xl bg-white ">
           <QRCodeCanvas
             value={qrString}
             size={240}

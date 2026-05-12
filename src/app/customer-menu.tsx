@@ -14,6 +14,8 @@ type CartItem = {
   sugar: string;
   qty: number;
   price: number;
+  original_price?: number;
+  discounted_price?: number;
   image?: string | null;
 };
 
@@ -171,6 +173,12 @@ export default function CustomerMenuPage() {
   const cartCount = useMemo(() => cart.reduce((s, it) => s + it.qty, 0), [cart]);
 
   function addToCart(p: Product, size: string, sugar: string) {
+    const availability = Number(p.inventory_availability?.available ?? 0);
+    if (p.is_sold_out || availability <= 0) {
+      setToast(p.inventory_availability?.reasons?.[0] || `${p.name} is unavailable`);
+      return;
+    }
+
     const v = p.variants.find((x) => x.size === size);
     if (!v) return;
 
@@ -188,12 +196,12 @@ export default function CustomerMenuPage() {
           sugar,
           qty: 1,
           price: Number(v.discounted_price ?? v.price),
+          original_price: Number(v.original_price ?? v.price),
+          discounted_price: Number(v.discounted_price ?? v.price),
           image: p.image ?? null,
         },
       ];
     });
-
-    // setToast(`Added: ${p.name} (${size})`);
   }
 
   function inc(key: string) {
@@ -341,6 +349,8 @@ export default function CustomerMenuPage() {
           sugar: it.sugar,
           qty: it.qty,
           price: it.price,
+          original_price: it.original_price,
+          discounted_price: it.discounted_price,
           image: it.image,
         })),
         payment_method: method === "khqr" ? "bakong" : method,
@@ -473,7 +483,16 @@ export default function CustomerMenuPage() {
                           </div>
 
                           <div className="mt-2 flex items-center justify-between">
-                            <div className="text-sm font-bold text-[#4f2206]">${it.price.toFixed(2)}</div>
+                            <div>
+                              {it.original_price && it.discounted_price && it.discounted_price < it.original_price ? (
+                                <>
+                                  <div className="text-xs text-gray-500 line-through">${it.original_price.toFixed(2)}</div>
+                                  <div className="text-sm font-bold text-[#a71237]">${it.discounted_price.toFixed(2)}</div>
+                                </>
+                              ) : (
+                                <div className="text-sm font-bold text-[#4f2206]">${it.price.toFixed(2)}</div>
+                              )}
+                            </div>
 
                             <div className="flex items-center gap-2">
                               <QtyBtn onClick={() => dec(it.key)}>-</QtyBtn>
@@ -614,7 +633,7 @@ export default function CustomerMenuPage() {
       ) : null}
 
       {/* Page */}
-      <img src="image/latte.webp" alt="logo" className="h-57.5 md:h-fit max-w-full md:w-[1100px] mx-auto items-center rounded-bl-[80px] rounded-tr-[80px] md:rounded-[" />
+      <img src="image/latte.webp" alt="logo" className="mx-auto h-57.5 max-w-full rounded-bl-[80px] rounded-tr-[80px] md:h-fit md:w-275" />
       <div className="mx-auto max-w-6xl px-4 py-6">
         {/* Header */}
 
@@ -722,13 +741,13 @@ function
   const originalPrice = Number(selectedVariant?.original_price ?? selectedVariant?.price ?? 0);
   const discountedPrice = Number(selectedVariant?.discounted_price ?? selectedVariant?.price ?? 0);
   const hasDiscount = discountedPrice < originalPrice;
+  const unavailable = Number(product.inventory_availability?.available ?? 0) <= 0 || product.is_sold_out;
 
   return (
     <div className="rounded-3xl border border-black/5 bg-white p-2 shadow-sm ">
       <div className="grid md:flex gap-1">
         <div className="md:h-24 h-30 w-full md:w-24 overflow-hidden rounded-2xl bg-[#f3e7dd] border border-black/5">
           {product.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={imageUrl(product.image)} alt={product.name} className="h-full w-full object-cover" />
           ) : null}
         </div>
@@ -738,8 +757,8 @@ function
           <div className="mt-1 text-right">
             {hasDiscount ? (
               <>
-                <div className="text-xs text-gray-500 line-through">${originalPrice.toFixed(2)}</div>
-                <div className="text-sm font-bold text-[#a71237]">${discountedPrice.toFixed(2)}</div>
+                <div className="flex gap-1"><div className="text-xs text-gray-500 line-through">${originalPrice.toFixed(2)}</div>
+                <div className="text-sm font-bold text-[#a71237]">${discountedPrice.toFixed(2)}</div></div>
               </>
             ) : (
               <div className="text-sm font-bold text-[#a71237]">${discountedPrice.toFixed(2)}</div>
@@ -782,11 +801,17 @@ function
 
       <button
         type="button"
-        className="mt-3 w-full rounded-2xl bg-[#042f2e] px-4 py-3 text-sm font-extrabold text-white hover:opacity-95"
+        className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white hover:opacity-95 disabled:cursor-not-allowed ${
+          unavailable ? "bg-gray-400" : "bg-[#0b4b46]"
+        }`}
         onClick={() => onAdd(product, size, sugar)}
+        disabled={unavailable}
       >
-        + Add
+        {unavailable ? "Not Available" : "+ Add"}
       </button>
+      {unavailable && product.inventory_availability?.reasons?.length ? (
+        <div className="mt-2 text-xs text-red-600">Temporarily unavailable</div>
+      ) : null}
     </div>
   );
 }

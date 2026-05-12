@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { apiGet } from "@/app/lib/api";
 import { OrdersApi, type Order } from "@/app/lib/orders";
+import { ReportsApi, type ProfitReport } from "@/app/lib/reports";
 import { makeEcho } from "@/app/lib/echo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BadgeDollarSign, CalendarDays, ChartColumn, Search, ShoppingBag, Wallet } from "lucide-react";
+import { BadgeDollarSign, CalendarDays, ChartColumn, Search, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 
 const IMAGE_BASE = process.env.NEXT_PUBLIC_IMAGEPATH ?? process.env.NEXT_PUBLIC_IMAGE_BASE_URL ?? "http://127.0.0.1:8000/storage";
 
@@ -25,6 +26,7 @@ function getItemThumbnail(image?: string | null) {
 export default function ReportsPanel() {
   const [report, setReport] = useState<any>(null);
   const [prevReport, setPrevReport] = useState<any>(null);
+  const [profitReport, setProfitReport] = useState<ProfitReport | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [live, setLive] = useState(false);
   const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
@@ -187,6 +189,25 @@ export default function ReportsPanel() {
     }
   }
 
+  async function loadProfit() {
+    try {
+      const currentRange = rangeRef.current;
+      const currentDateFrom = dateFromRef.current;
+      const currentDateTo = dateToRef.current;
+
+      const params: any = { range: currentRange };
+      if (currentRange === "custom" && currentDateFrom && currentDateTo) {
+        params.from = currentDateFrom;
+        params.to = currentDateTo;
+      }
+
+      const data = await ReportsApi.profit(params);
+      setProfitReport(data ?? null);
+    } catch {
+      // Keep profit visible with last known values if request fails.
+    }
+  }
+
   useEffect(() => {
     loadReport();
 
@@ -202,6 +223,7 @@ export default function ReportsPanel() {
 
     const pollId = window.setInterval(() => {
       loadReport();
+      loadProfit();
     }, 5000);
 
     let echo: any;
@@ -260,7 +282,9 @@ export default function ReportsPanel() {
     // Clear old data immediately when range changes to prevent stale data display
     setReport(null);
     setPrevReport(null);
+    setProfitReport(null);
     loadReport();
+    loadProfit();
   }, [range, dateFrom, dateTo]);
 
   const productImageById = useMemo(() => {
@@ -478,15 +502,46 @@ export default function ReportsPanel() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1.2fr_1fr]">
-        <Card className="border-[#d8e6df] bg-white">
-          <CardHeader>
-            <CardTitle className="text-base text-[#1f3d34]">Revenue Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SimpleLineChart points={stats.trendPoints.map((x) => x[1])} labels={stats.trendPoints.map((x) => x[0])} />
-          </CardContent>
-        </Card>
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <MetricCard
+          label="Sales Income"
+          value={profitReport ? `$${profitReport.totals.sales_income.toFixed(2)}` : "-"}
+          icon={<BadgeDollarSign className="h-4 w-4" />}
+          points={(profitReport?.daily ?? []).slice(-8).map((d) => d.sales_income)}
+          loading={!profitReport}
+        />
+        <MetricCard
+          label="Ingredient Cost"
+          value={profitReport ? `$${profitReport.totals.ingredient_cost.toFixed(2)}` : "-"}
+          icon={<ChartColumn className="h-4 w-4" />}
+          points={(profitReport?.daily ?? []).slice(-8).map((d) => d.ingredient_cost)}
+          loading={!profitReport}
+        />
+        <MetricCard
+          label="Waste Cost"
+          value={profitReport ? `$${profitReport.totals.waste_cost.toFixed(2)}` : "-"}
+          icon={<ChartColumn className="h-4 w-4" />}
+          points={(profitReport?.daily ?? []).slice(-8).map((d) => d.waste_cost)}
+          loading={!profitReport}
+        />
+        <MetricCard
+          label="Gross Profit"
+          value={profitReport ? `$${profitReport.totals.gross_profit.toFixed(2)}` : "-"}
+          icon={<TrendingUp className="h-4 w-4" />}
+          points={(profitReport?.daily ?? []).slice(-8).map((d) => d.gross_profit)}
+          loading={!profitReport}
+        />
+        <MetricCard
+          label="Final Profit"
+          value={profitReport ? `$${profitReport.totals.final_profit.toFixed(2)}` : "-"}
+          icon={<Wallet className="h-4 w-4" />}
+          points={(profitReport?.daily ?? []).slice(-8).map((d) => d.final_profit)}
+          loading={!profitReport}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        
 
         <Card className="border-[#d8e6df] bg-white">
           <CardHeader>
@@ -553,7 +608,7 @@ export default function ReportsPanel() {
                     <th className="py-2">Status</th>
                     <th className="py-2">Orders</th>
                     <th className="py-2">Share</th>
-                    <th className="py-2">Trend</th>
+                    
                   </tr>
                 </thead>
                 <tbody>
@@ -563,8 +618,7 @@ export default function ReportsPanel() {
                       <tr key={row.label} className="border-b border-[#eef4f1] text-[#25443a]">
                         <td className="py-2 font-medium">{row.label}</td>
                         <td className="py-2">{row.count}</td>
-                        <td className="py-2">{pct}%</td>
-                        <td className="py-2 text-emerald-700">+{Math.max(Number(pct) / 3, 0.1).toFixed(1)}%</td>
+                        <td className="py-2">{pct}%</td>                      
                       </tr>
                     );
                   })}
@@ -689,13 +743,14 @@ function MetricCard({
   label: string;
   value: string;
   hint?: string;
-  delta: number;
-  deltaLabel: string;
+  delta?: number;
+  deltaLabel?: string;
   icon: ReactNode;
   points: number[];
   loading?: boolean;
 }) {
-  const up = delta >= 0;
+  const hasDelta = typeof delta === "number";
+  const up = hasDelta ? (delta! >= 0) : true;
   return (
     <Card className="border-[#d8e6df] bg-white">
       <CardContent className="p-4">
@@ -706,9 +761,11 @@ function MetricCard({
             {loading ? (
               <div className="mt-1 text-xs text-[#8aa198]">loading...</div>
             ) : (
-              <div className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}>
-                {up ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}% {deltaLabel}
-              </div>
+              hasDelta ? (
+                <div className={`mt-1 text-xs ${up ? "text-emerald-700" : "text-amber-700"}`}>
+                  {up ? "↑" : "↓"} {Math.abs(delta!).toFixed(1)}% {deltaLabel}
+                </div>
+              ) : null
             )}
             {hint && <div className="mt-1 text-xs text-[#6f897f]">{hint}</div>}
           </div>

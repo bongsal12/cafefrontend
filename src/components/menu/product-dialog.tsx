@@ -187,12 +187,7 @@ export function ProductDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Category</Label>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setCatOpen(true)}>
-                    + Add
-                  </Button>
-                </div>
-
-                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <Select value={categoryId} onValueChange={setCategoryId}>
                   <SelectTrigger className="rounded-2xl">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -204,17 +199,15 @@ export function ProductDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                </div>
+
+                
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Product Type</Label>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setTypeOpen(true)}>
-                    + Add
-                  </Button>
-                </div>
-
-                <Select value={typeId} onValueChange={setTypeId}>
+                   <Select value={typeId} onValueChange={setTypeId}>
                   <SelectTrigger className="rounded-2xl">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -226,6 +219,9 @@ export function ProductDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                </div>
+
+              
               </div>
             </div>
 
@@ -238,10 +234,7 @@ export function ProductDialog({
               <div className="space-y-2">
                 <Label>Slug</Label>
                 <Input className="rounded-2xl" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="iced-latte" />
-                <div className="text-xs text-muted-foreground">Final: {autoSlug}</div>
               </div>
-
-              {/* Inventory fields removed (rolled back) */}
             </div>
 
             {/* Image */}
@@ -249,25 +242,15 @@ export function ProductDialog({
               <Label>Image</Label>
               <div className="grid gap-2 md:grid-cols-3">
                 <Input
-                  className="rounded-2xl md:col-span-2"
+                  className="rounded-2xl md:col-span-3"
                   type="file"
                   accept="image/*"
                   onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
                 />
 
-                <div className="space-y-2 md:col-span-1">
-                  <Input
-                    placeholder="Or paste image URL"
-                    className="rounded-2xl"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                  />
-                  <Button type="button" variant="secondary" size="sm" onClick={fetchImageFromUrl}>
-                    Use URL
-                  </Button>
-                </div>
+               
               </div>
-              {imageFile ? <div className="text-xs text-muted-foreground">Attached: {imageFile.name}</div> : null}
+              {imageFile ? <div className="text-xs  text-muted-foreground">Attached: {imageFile.name}</div> : null}
             </div>
 
             {/* Variants */}
