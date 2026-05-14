@@ -87,6 +87,12 @@ export default function CustomerMenuPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [successModal, setSuccessModal] = useState<{ open: boolean; message: string; orderRef?: string | null }>({
+    open: false,
+    message: "",
+    orderRef: null,
+  });
+  const successTimerRef = useRef<number | null>(null);
 
   // Cart drawer
   const [cartOpen, setCartOpen] = useState(false);
@@ -111,6 +117,15 @@ export default function CustomerMenuPage() {
     const t = window.setTimeout(() => setToast(null), 2000);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        window.clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -281,6 +296,19 @@ export default function CustomerMenuPage() {
     setCreatedOrder(null);
   }
 
+  function showPaymentSuccess(message: string, orderRef?: string | null) {
+    if (successTimerRef.current) {
+      window.clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+
+    setSuccessModal({ open: true, message, orderRef: orderRef ?? null });
+    successTimerRef.current = window.setTimeout(() => {
+      setSuccessModal({ open: false, message: "", orderRef: null });
+      successTimerRef.current = null;
+    }, 1600);
+  }
+
   async function checkPaymentOnce(orderId: number) {
     try {
       const status = await apiGet<PayStatusResp>(`/orders/${orderId}/bakong/status`);
@@ -293,7 +321,7 @@ export default function CustomerMenuPage() {
         (status as any)?.bakong?.responseCode === 0;
 
       if (paid) {
-        setToast("Payment success ✅ Order confirmed");
+        showPaymentSuccess("Payment success ✅ Order confirmed", createdOrder?.reference);
         stopPolling();
         stopExpireTimer();
         stopTicker();
@@ -303,7 +331,7 @@ export default function CustomerMenuPage() {
         setNote("");
 
         // Close modal shortly
-        window.setTimeout(() => closePayModal(), 600);
+        window.setTimeout(() => closePayModal(), 400);
         return true;
       }
 
@@ -360,10 +388,10 @@ export default function CustomerMenuPage() {
       setCreatedOrder(created);
 
       if (method === "cash") {
-        setToast("Order placed ✅ Cash paid");
+        showPaymentSuccess("Order placed ✅ Cash paid", created.reference);
         setCart([]);
         setNote("");
-        window.setTimeout(() => closePayModal(), 1500);
+        window.setTimeout(() => closePayModal(), 400);
         return;
       }
 
@@ -398,6 +426,17 @@ export default function CustomerMenuPage() {
       {toast ? (
         <div className="fixed top-4 right-4 z-50 max-w-sm rounded-xl bg-[#4f2206] px-4 py-3 text-sm text-white shadow-lg">
           {toast}
+        </div>
+      ) : null}
+      {successModal.open ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-xl">
+            <div className="text-lg font-extrabold text-[#0b4b46]">Payment Success</div>
+            <div className="mt-2 text-sm text-gray-600">{successModal.message}</div>
+            {successModal.orderRef ? (
+              <div className="mt-1 text-xs text-gray-500">Order: {successModal.orderRef}</div>
+            ) : null}
+          </div>
         </div>
       ) : null}
       <button
