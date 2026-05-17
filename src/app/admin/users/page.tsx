@@ -12,12 +12,25 @@ type User = {
   avatar?: string | null;
 };
 
+type RoleItem = {
+  role: string;
+  label: string;
+  permissions: string[];
+};
+
+const FALLBACK_ROLES: RoleItem[] = [
+  { role: "admin", label: "Admin", permissions: [] },
+  { role: "staff", label: "Cashier", permissions: [] },
+  { role: "inventory_staff", label: "Inventory Staff", permissions: [] },
+];
+
 const API_ROOT = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
 export default function UsersPage() {
   const { token } = useAuth();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<RoleItem[]>(FALLBACK_ROLES);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -33,7 +46,23 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
+    fetchRoles();
   }, [token]);
+
+  async function fetchRoles() {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_ROOT}/role-permissions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRoles((data.roles || []).length ? data.roles : FALLBACK_ROLES);
+      }
+    } catch {
+      // ignore; user CRUD can still work
+    }
+  }
 
   async function fetchUsers() {
     if (!token) return;
@@ -77,8 +106,13 @@ export default function UsersPage() {
         setRole("staff");
         await fetchUsers();
       } else {
-        const data = await res.json();
-        setMessage(data.message || "Failed to create user");
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          setMessage(data.message || "Failed to create user");
+        } catch {
+          setMessage(text || `Failed to create user (${res.status})`);
+        }
       }
     } catch (err: any) {
       setMessage(err.message || "Request failed");
@@ -116,11 +150,12 @@ export default function UsersPage() {
         cancelEdit();
         await fetchUsers();
       } else {
+        const text = await res.text();
         try {
-          const data = await res.json();
+          const data = JSON.parse(text);
           setMessage(data.message || "Failed to update user");
         } catch {
-          setMessage(`Error: ${res.status} ${res.statusText}`);
+          setMessage(text || `Error: ${res.status} ${res.statusText}`);
         }
       }
     } catch (err: any) {
@@ -169,7 +204,7 @@ export default function UsersPage() {
     <div className="max-w-4xl space-y-6">
       <h2 className="text-xl font-semibold">Manage Users</h2>
       {message && (
-        <div className="rounded border p-3 text-sm bg-white">{message}</div>
+        <div className="rounded border p-3 text-md text-green-700 bg-green-100">{message}</div>
       )}
 
       <form onSubmit={handleCreate} className="space-y-4 bg-white p-6 rounded shadow">
@@ -191,8 +226,11 @@ export default function UsersPage() {
         <div>
           <label className="block text-sm font-medium mb-1">Role</label>
           <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded border px-3 py-2">
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
+            {roles.map((item) => (
+              <option key={item.role} value={item.role}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -224,7 +262,7 @@ export default function UsersPage() {
                   <td className="p-2 align-top">{u.id}</td>
                   <td className="p-2 align-top">{editingId === u.id ? <input className="w-full rounded border px-2 py-1" value={editValues.name || ""} onChange={(e) => setEditValues((s) => ({ ...s, name: e.target.value }))} /> : u.name}</td>
                   <td className="p-2 align-top">{editingId === u.id ? <input className="w-full rounded border px-2 py-1" value={editValues.email || ""} onChange={(e) => setEditValues((s) => ({ ...s, email: e.target.value }))} /> : u.email}</td>
-                  <td className="p-2 align-top">{editingId === u.id ? <select className="rounded border px-2 py-1" value={editValues.role || u.role} onChange={(e) => setEditValues((s) => ({ ...s, role: e.target.value }))}><option value="staff">Staff</option><option value="admin">Admin</option></select> : u.role}</td>
+                  <td className="p-2 align-top">{editingId === u.id ? <select className="rounded border px-2 py-1" value={editValues.role || u.role} onChange={(e) => setEditValues((s) => ({ ...s, role: e.target.value }))}>{roles.map((item) => <option key={item.role} value={item.role}>{item.label}</option>)}</select> : u.role}</td>
                   {/* <td className="p-2 align-top">{editingId === u.id ? <button type="button" onClick={() => setEditValues((s) => ({ ...s, active: !s.active }))} className={`rounded px-3 py-1 text-xs font-medium border ${editValues.active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"}`}>{editValues.active ? "Active" : "Inactive"}</button> : <button type="button" onClick={() => toggleActive(u)} className={`rounded px-3 py-1 text-xs font-medium border ${u.active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"}`}>{u.active ? "Active" : "Inactive"}</button>}</td> */}
                   <td className="p-2 align-top space-x-2">{editingId === u.id ? <><button type="button" onClick={() => saveEdit(u.id)} className="rounded bg-blue-600 text-white px-3 py-1 text-sm">Save</button><button type="button" onClick={cancelEdit} className="rounded border px-3 py-1 text-sm">Cancel</button></> : <><button type="button" onClick={() => startEdit(u)} className="rounded border px-3 py-1 text-sm">Edit</button><button type="button" onClick={() => handleDelete(u)} className="rounded bg-red-600 text-white px-3 py-1 text-sm">Delete</button></>}</td>
                 </tr>

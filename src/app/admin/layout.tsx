@@ -1,26 +1,84 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Coffee, LayoutDashboard, Package, QrCode, Settings, ShoppingBag, User, WalletCards, LogOut, Percent } from "lucide-react";
+import { BarChart3, Coffee, LayoutDashboard, Package, QrCode, Shield, ShoppingBag, User, WalletCards, LogOut, Percent } from "lucide-react";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { useAuth } from "@/app/lib/auth-context";
 import { useRouter } from "next/navigation";
+
+const NAV_ITEMS = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders" },
+  { href: "/admin/pos", label: "POS", icon: WalletCards, permission: "pos" },
+  { href: "/admin/menu", label: "Products", icon: Coffee, permission: "products" },
+  { href: "/admin/inventory", label: "Inventory", icon: Package, permission: "inventory" },
+  { href: "/admin/discount", label: "Discounts", icon: Percent, permission: "discounts" },
+  { href: "/admin/tables", label: "QR Tables", icon: QrCode, permission: "tables" },
+  { href: "/admin/roles", label: "Role Access", icon: Shield, permission: "settings" },
+  { href: "/admin/users", label: "Users", icon: User, permission: "users" },
+  { href: "/admin/reports", label: "Reports", icon: BarChart3, permission: "reports" },
+] as const;
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { logout, user } = useAuth();
   const router = useRouter();
-
-  // Don't wrap login page with AdminGuard
-  if (pathname === "/admin/login") {
-    return <>{children}</>;
-  }
+  const [redirecting, setRedirecting] = useState(false);
+  const isLoginPage = pathname === "/admin/login";
 
   function handleLogout() {
     logout();
     router.push("/admin/login");
+  }
+
+  const hasAccess = (permission: string) => {
+    if (user?.role === "admin") return true;
+    return user?.permissions?.includes(permission) ?? false;
+  };
+
+  const routePermission = (() => {
+    if (pathname === "/admin") return "dashboard";
+    if (pathname.startsWith("/admin/orders")) return "orders";
+    if (pathname.startsWith("/admin/pos")) return "pos";
+    if (pathname.startsWith("/admin/menu")) return "products";
+    if (pathname.startsWith("/admin/users")) return "users";
+    if (pathname.startsWith("/admin/inventory")) return "inventory";
+    if (pathname.startsWith("/admin/discount")) return "discounts";
+    if (pathname.startsWith("/admin/reports")) return "reports";
+    if (pathname.startsWith("/admin/tables")) return "tables";
+    if (pathname.startsWith("/admin/roles")) return "settings";
+    return null;
+  })();
+
+  const landingPage = (() => {
+    if (user?.role === "admin") return "/admin";
+    const firstVisible = NAV_ITEMS.find((item) => hasAccess(item.permission));
+    return firstVisible?.href ?? "/admin/login";
+  })();
+
+  useEffect(() => {
+    if (isLoginPage) {
+      setRedirecting(false);
+      return;
+    }
+
+    if (routePermission && !hasAccess(routePermission)) {
+      setRedirecting(true);
+      router.replace(landingPage);
+      return;
+    }
+
+    setRedirecting(false);
+  }, [isLoginPage, landingPage, pathname, routePermission, router, user]);
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
+
+  if (redirecting) {
+    return null;
   }
 
   return (
@@ -31,28 +89,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <aside className="hidden w-70 flex-col border-r border-emerald-900/20 bg-linear-to-b from-[#083a2f] via-[#0b4b3a] to-[#0f5b46] text-[#eaf6f0] lg:flex">
             <div className="p-6">
               <div className="text-xl font-semibold tracking-tight">STARCOFFEE</div>
-              <div className="text-xs text-emerald-100/80">Cafe Admin</div>
             </div>
 
-            <nav className="space-y-1 px-3 pb-6">
-              {user?.role === "admin" && (
-                <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} active={pathname === "/admin"} />
-              )}
-              <NavItem href="/admin/orders" label="Orders" icon={ShoppingBag} active={pathname.startsWith("/admin/orders")} />
-              {user?.role === "admin" && (
-                <NavItem href="/admin/users" label="Users" icon={User} active={pathname.startsWith("/admin/users")} />
-              )}
-              <NavItem href="/admin/pos" label="POS" icon={WalletCards} active={pathname.startsWith("/admin/pos")} />
-              <NavItem href="/admin/menu" label="Products" icon={Coffee} active={pathname.startsWith("/admin/menu")} />
-              {user?.role === "admin" && (
-                <>
-                  <NavItem href="/admin/inventory" label="Inventory" icon={Package} active={pathname.startsWith("/admin/inventory")} />
-                  <NavItem href="/admin/discount" label="Discounts" icon={Percent} active={pathname.startsWith("/admin/discount")} />
-                  <NavItem href="/admin/reports" label="Reports" icon={BarChart3} active={pathname.startsWith("/admin/reports")} />
-                  <NavItem href="/admin/tables" label="QR Tables" icon={QrCode} active={pathname.startsWith("/admin/tables")} />
-                  <NavItem href="/admin/reports" label="Settings" icon={Settings} active={false} />
-                </>
-              )}
+            <nav className="space-y-1 px-3 pb-6 ">
+              {NAV_ITEMS.filter((item) => hasAccess(item.permission)).map((item) => (
+                <NavItem
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  active={item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)}
+                />
+              ))}
             </nav>
 
             <div className="mt-auto pb-40  space-y-4 p-4 ">
@@ -102,7 +150,7 @@ function NavItem({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
+      className={`flex items-center text-[16px] gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
         active
           ? "bg-emerald-400/30 font-medium text-white"
           : "text-emerald-100/90 hover:bg-emerald-300/15 hover:text-white"

@@ -14,7 +14,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      if (user?.role === "staff") {
+      if (user?.role === "admin") {
+        router.push("/admin");
+      } else if (user?.permissions?.includes("inventory")) {
+        router.push("/admin/inventory");
+      } else if (user?.permissions?.includes("pos")) {
         router.push("/admin/pos");
       } else {
         router.push("/admin");
@@ -28,8 +32,12 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const u = await login(loginInput, password);
-      const role = u?.role || user?.role;
-      if (role === "staff") {
+      const permissions = u?.permissions || user?.permissions || [];
+      if (u?.role === "admin") {
+        router.push("/admin");
+      } else if (permissions.includes("inventory")) {
+        router.push("/admin/inventory");
+      } else if (permissions.includes("pos")) {
         router.push("/admin/pos");
       } else {
         router.push("/admin");
